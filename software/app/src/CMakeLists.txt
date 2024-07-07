@@ -38,6 +38,7 @@ SET(TOOLS
 	hackrf_sweep
 	hackrf_operacake
 	hackrf_biast
+	baseline_alerts
 )
 
 if(MSVC)
