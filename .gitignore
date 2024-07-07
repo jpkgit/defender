@@ -10,4 +10,4 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 
-software/build/app/src/build
+software/build
