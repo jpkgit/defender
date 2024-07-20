@@ -28,16 +28,7 @@ include_directories(${FFTW_INCLUDES})
 get_filename_component(FFTW_LIBRARY_DIRS ${FFTW_LIBRARIES} DIRECTORY)
 link_directories(${FFTW_LIBRARY_DIRS})
 
-SET(TOOLS
-	hackrf_transfer
-	hackrf_spiflash
-	hackrf_cpldjtag
-	hackrf_info
-	hackrf_debug
-	hackrf_clock
-	hackrf_sweep
-	hackrf_operacake
-	hackrf_biast
+SET(TOOLS	
 	baseline_alerts
 )
 
