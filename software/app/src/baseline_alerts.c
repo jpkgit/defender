@@ -354,32 +354,35 @@ int rx_callback(hackrf_transfer* transfer)
 			time_t time_stamp_seconds = usb_transfer_time.tv_sec;
 			fft_time = localtime(&time_stamp_seconds);
 			strftime(time_str, 50, "%Y-%m-%d, %H:%M:%S", fft_time);
-			fprintf(outfile,
-				"%s.%06ld, %" PRIu64 ", %" PRIu64 ", %.2f, %u",
-				time_str,
-				(long int) usb_transfer_time.tv_usec,
-				(uint64_t) (frequency),
-				(uint64_t) (frequency + DEFAULT_SAMPLE_RATE_HZ / 4),
-				fft_bin_width,
-				fftSize);
-			for (i = 0; (fftSize / 4) > i; i++) {
-				fprintf(outfile,
-					", %.2f",
-					pwr[i + 1 + (fftSize * 5) / 8]);
-			}
-			fprintf(outfile, "\n");
-			fprintf(outfile,
-				"%s.%06ld, %" PRIu64 ", %" PRIu64 ", %.2f, %u",
-				time_str,
-				(long int) usb_transfer_time.tv_usec,
-				(uint64_t) (frequency + (DEFAULT_SAMPLE_RATE_HZ / 2)),
-				(uint64_t) (frequency + ((DEFAULT_SAMPLE_RATE_HZ * 3) / 4)),
-				fft_bin_width,
-				fftSize);
-			for (i = 0; (fftSize / 4) > i; i++) {
+			// fprintf(outfile,
+			// 	"%s.%06ld, %" PRIu64 ", %" PRIu64 ", %.2f, %u",
+			// 	time_str,
+			// 	(long int) usb_transfer_time.tv_usec,
+			// 	(uint64_t) (frequency),
+			// 	(uint64_t) (frequency + DEFAULT_SAMPLE_RATE_HZ / 4),
+			// 	fft_bin_width,
+			// 	fftSize);
+			// for (i = 0; (fftSize / 4) > i; i++) {
+			// 	fprintf(outfile,
+			// 		", %.2f",
+			// 		pwr[i + 1 + (fftSize * 5) / 8]);
+			// }
+			//fprintf(outfile, "\n");
+			// fprintf(outfile,
+			// 	"%s.%06ld, %" PRIu64 ", %" PRIu64 ", %.2f, %u",
+			// 	time_str,
+			// 	(long int) usb_transfer_time.tv_usec,
+			// 	(uint64_t) (frequency + (DEFAULT_SAMPLE_RATE_HZ / 2)),
+			// 	(uint64_t) (frequency + ((DEFAULT_SAMPLE_RATE_HZ * 3) / 4)),
+			// 	fft_bin_width,
+			// 	fftSize);
+			for (i = 0; (fftSize / 4) > i; i++) 
+			{
 				fprintf(outfile, ", %.2f", pwr[i + 1 + (fftSize / 8)]);
+				if (pwr[i + 1 + (fftSize / 8)] > -40)
+					fprintf(stderr, "Alert at %u freq\n", frequency);
 			}
-			fprintf(outfile, "\n");
+			//fprintf(outfile, "\n");
 		}
 	}
 	return 0;
