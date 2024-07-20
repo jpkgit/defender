@@ -379,8 +379,8 @@ int rx_callback(hackrf_transfer* transfer)
 			for (i = 0; (fftSize / 4) > i; i++) 
 			{
 				fprintf(outfile, ", %.2f", pwr[i + 1 + (fftSize / 8)]);
-				if (pwr[i + 1 + (fftSize / 8)] > -40)
-					fprintf(stderr, "Alert at %u freq\n", frequency);
+				if (pwr[i + 1 + (fftSize / 8)] > -55)
+					fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
 			}
 			//fprintf(outfile, "\n");
 		}
