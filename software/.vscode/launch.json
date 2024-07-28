@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/app/src/baseline_alerts",
-            "args": ["-f 300:600", "-n", "-l 8", "-g 10", "-w 6000", "-r/home/user/file.csv"],
+            "args": ["-f 300:600", "-n", "-l 8", "-g 32", "-w 6000", "-r/home/user/file.csv", "-t 55"],
             //"-N 1",
             "stopAtEntry": false,
             "cwd": "${fileDirname}",

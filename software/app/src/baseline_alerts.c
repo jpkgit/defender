@@ -113,6 +113,7 @@ uint32_t num_sweeps = 0;
 int num_ranges = 0;
 uint16_t frequencies[MAX_SWEEP_RANGES * 2];
 int step_count;
+uint32_t threshold = 55;
 
 static float TimevalDiff(const struct timeval* a, const struct timeval* b)
 {
@@ -379,7 +380,9 @@ int rx_callback(hackrf_transfer* transfer)
 			for (i = 0; (fftSize / 4) > i; i++) 
 			{
 				fprintf(outfile, ", %.2f", pwr[i + 1 + (fftSize / 8)]);
-				if (pwr[i + 1 + (fftSize / 8)] > -55)
+
+				int32_t thresh = threshold * -1;
+				if (pwr[i + 1 + (fftSize / 8)] > thresh)
 					fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
 			}
 			//fprintf(outfile, "\n");
@@ -394,6 +397,7 @@ static void usage()
 		"Usage:\n"
 		"\t[-h] # this help\n"
 		"\t[-d serial_number] # Serial number of desired HackRF\n"
+		"\t[-t threshold] # Threshold in dB to trigger and alert. Default is -55 dB\n"		
 		"\t[-a amp_enable] # RX RF amplifier 1=Enable, 0=Disable\n"
 		"\t[-f freq_min:freq_max] # minimum and maximum frequencies in MHz\n"
 		"\t[-p antenna_enable] # Antenna port power, 1=Enable, 0=Disable\n"
@@ -480,7 +484,7 @@ int main(int argc, char** argv)
 	const char* fftwWisdomPath = NULL;
 	int fftw_plan_type = FFTW_MEASURE;
 
-	while ((opt = getopt(argc, argv, "a:f:p:l:g:d:N:w:W:P:n1BIr:h?")) != EOF) {
+	while ((opt = getopt(argc, argv, "a:f:p:l:g:d:N:w:W:P:n1BIr:t:h?")) != EOF) {
 		result = HACKRF_SUCCESS;
 		switch (opt) {
 		case 'd':
@@ -581,6 +585,10 @@ int main(int argc, char** argv)
 			path = optarg;
 			break;
 
+		case 't':
+			result = parse_u32(optarg, &threshold);
+			break;
+
 		case 'h':
 		case '?':
 			usage();
@@ -589,10 +597,6 @@ int main(int argc, char** argv)
 		default:
 			fprintf(stderr, "unknown argument '-%c %s'\n", opt, optarg);
 			usage();
-			return EXIT_FAILURE;
-		}
-
-		if (result != HACKRF_SUCCESS) {
 			fprintf(stderr,
 				"argument error: '-%c %s' %s (%d)\n",
 				opt,
