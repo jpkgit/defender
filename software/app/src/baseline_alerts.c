@@ -216,6 +216,7 @@ fftwf_plan ifftwPlan = NULL;
 uint32_t ifft_idx = 0;
 float *pwr;
 float *window;
+float baseline[1000000];
 
 struct timeval usb_transfer_time;
 
@@ -259,6 +260,7 @@ int rx_callback(hackrf_transfer *transfer)
 	byte_count += transfer->valid_length;
 	buf = (int8_t *)transfer->buffer;
 	ifft_bins = fftSize * step_count;
+
 	for (j = 0; j < BLOCKS_PER_TRANSFER; j++)
 	{
 		ubuf = (uint8_t *)buf;
@@ -418,10 +420,16 @@ int rx_callback(hackrf_transfer *transfer)
 			// 	fftSize);
 			for (i = 0; (fftSize / 4) > i; i++)
 			{
-				fprintf(outfile, ", %.2f", pwr[i + 1 + (fftSize / 8)]);
+				float power_val = pwr[i + 1 + (fftSize / 8)];
+
+				fprintf(outfile, ", %.2f", power_val);
+				baseline[frequency/6000] = power_val;
+
+				if (sweep_count % 50 == 0)
+					fprintf(stderr, "77500 Power: %.2f\n", power_val);
 
 				int32_t thresh = threshold * -1;
-				if (pwr[i + 1 + (fftSize / 8)] > thresh)
+				if (power_val > thresh)
 					fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
 			}
 			// fprintf(outfile, "\n");
@@ -771,6 +779,7 @@ int main(int argc, char **argv)
 		fftwf_plan_dft_1d(fftSize, fftwIn, fftwOut, FFTW_FORWARD, fftw_plan_type);
 	pwr = (float *)fftwf_malloc(sizeof(float) * fftSize);
 	window = (float *)fftwf_malloc(sizeof(float) * fftSize);
+
 	for (i = 0; i < fftSize; i++)
 	{
 		window[i] = (float)(0.5f * (1.0f - cos(2 * M_PI * i / (fftSize - 1))));
