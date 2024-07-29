@@ -423,9 +423,9 @@ int rx_callback(hackrf_transfer *transfer)
 				float power_val = pwr[i + 1 + (fftSize / 8)];
 
 				fprintf(outfile, ", %.2f", power_val);
-				baseline[frequency/6000] = power_val;
+				baseline[frequency/6000+i] = power_val;
 
-				if (sweep_count % 50 == 0)
+				if (frequency/6000 == 77500 && i == 0 && sweep_count % 10 == 0)
 					fprintf(stderr, "77500 Power: %.2f\n", power_val);
 
 				int32_t thresh = threshold * -1;
