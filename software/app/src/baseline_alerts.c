@@ -200,7 +200,7 @@ volatile bool do_exit = false;
 
 FILE *outfile = NULL;
 volatile uint32_t byte_count = 0;
-volatile uint64_t sweep_count = 0;
+volatile unsigned int sweep_count = 0;
 
 struct timeval time_start;
 struct timeval t_start;
@@ -242,14 +242,11 @@ int save_baseline()
 	
 	fprintf(stderr, "Saving %u size baseline to file...\n", BASELINE_SIZE);
 
-	int array_size = sizeof(baseline) / sizeof(baseline[0]);
-	
 	int save_baseline[BASELINE_SIZE];
-	memset(save_baseline, 0, BASELINE_SIZE);
-	
+	memset(save_baseline, 0, BASELINE_SIZE*(sizeof(save_baseline[0])));
 	
 	pthread_mutex_lock(&mutex);
-	memcpy(baseline, save_baseline,BASELINE_SIZE);
+	memcpy(save_baseline, baseline, sizeof(save_baseline));
 	pthread_mutex_unlock(&mutex);
 
     FILE *file = fopen("baseline.txt", "w");
@@ -260,7 +257,7 @@ int save_baseline()
 
     // Write the array to the file
 	int i = 0;
-    for (i = 0; i < array_size; i++) 
+    for (i = 0; i < BASELINE_SIZE; i++) 
 	{
         fprintf(file, "%d\n", save_baseline[i]);
     }
@@ -310,7 +307,7 @@ int rx_callback(hackrf_transfer *transfer)
 {
 	int8_t *buf;
 	uint8_t *ubuf;
-	uint64_t frequency; /* in Hz */
+	unsigned int frequency; /* in Hz */
 	uint64_t band_edge;
 	uint32_t record_length;
 	int i, j, ifft_bins;
@@ -1086,8 +1083,8 @@ int main(int argc, char **argv)
 			time_difference = TimevalDiff(&time_now, &t_start);
 			sweep_rate = (float)sweep_count / time_difference;
 			fprintf(stderr,
-					"%" PRIu64
-					" total sweeps completed, %.2f sweeps/second\n",
+					
+					"%u total sweeps completed, %.2f sweeps/second\n",
 					sweep_count,
 					sweep_rate);
 
@@ -1124,7 +1121,7 @@ int main(int argc, char **argv)
 		sweep_rate = sweep_count / time_diff;
 	}
 	fprintf(stderr,
-			"Total sweeps: %" PRIu64 " in %.5f seconds (%.2f sweeps/second)\n",
+			"Total sweeps: %u in %.5f seconds (%.2f sweeps/second)\n",
 			sweep_count,
 			time_diff,
 			sweep_rate);
