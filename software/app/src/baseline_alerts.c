@@ -1,26 +1,3 @@
-/*
- * Copyright 2016-2022 Great Scott Gadgets <info@greatscottgadgets.com>
- * Copyright 2016 Dominic Spill <dominicgs@gmail.com>
- * Copyright 2016 Mike Walters <mike@flomp.net>
- *
- * This file is part of HackRF.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; see the file COPYING.  If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street,
- * Boston, MA 02110-1301, USA.
- */
-
 #include <hackrf.h>
 
 #include <stdio.h>
@@ -28,6 +5,12 @@
 #include <string.h>
 #include <getopt.h>
 #include <time.h>
+
+#include <unistd.h>
+#include <termios.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <pthread.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -110,6 +93,8 @@ int gettimeofday(struct timeval *tv, void *ignored)
 #define m_sleep(a) usleep((a * 1000))
 #endif
 
+#define BASELINE_SIZE 1000000
+
 uint32_t num_sweeps = 0;
 int num_ranges = 0;
 uint16_t frequencies[MAX_SWEEP_RANGES * 2];
@@ -119,6 +104,34 @@ uint32_t threshold = 55;
 static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 {
 	return (a->tv_sec - b->tv_sec) + 1e-6f * (a->tv_usec - b->tv_usec);
+}
+
+// Function to check if a key has been pressed
+int kbhit(void)
+{
+	struct termios oldt, newt;
+	int ch;
+	int oldf;
+
+	tcgetattr(STDIN_FILENO, &oldt);
+	newt = oldt;
+	newt.c_lflag &= ~(ICANON | ECHO);
+	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+	oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
+	fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
+
+	ch = getchar();
+
+	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+	fcntl(STDIN_FILENO, F_SETFL, oldf);
+
+	if (ch != EOF)
+	{
+		ungetc(ch, stdin);
+		return 1;
+	}
+
+	return 0;
 }
 
 int parse_u32(char *s, uint32_t *const value)
@@ -216,7 +229,72 @@ fftwf_plan ifftwPlan = NULL;
 uint32_t ifft_idx = 0;
 float *pwr;
 float *window;
-float baseline[1000000];
+
+/* New stuff*/
+float baseline[BASELINE_SIZE];
+bool b_quit = false;
+pthread_mutex_t mutex;
+
+int save_baseline()
+{
+	/* set baserline lock, memcpy, unlock, save copy to file*/
+	    // Open a file for writing
+	
+	fprintf(stderr, "Saving %u size baseline to file...\n", BASELINE_SIZE);
+
+	int array_size = sizeof(baseline) / sizeof(baseline[0]);
+	
+	int save_baseline[BASELINE_SIZE];
+	memset(save_baseline, 0, BASELINE_SIZE);
+	
+	
+	pthread_mutex_lock(&mutex);
+	memcpy(baseline, save_baseline,BASELINE_SIZE);
+	pthread_mutex_unlock(&mutex);
+
+    FILE *file = fopen("baseline.txt", "w");
+    if (file == NULL) {
+        perror("Error opening file");
+        return 1;
+    }
+
+    // Write the array to the file
+	int i = 0;
+    for (i = 0; i < array_size; i++) 
+	{
+        fprintf(file, "%d\n", save_baseline[i]);
+    }
+
+    // Close the file
+    fclose(file);
+
+	fprintf(stderr, "Saved %u size baseline to file\n", BASELINE_SIZE);
+	return 0;	
+}
+
+int load_baseline()
+{
+	/* load baseline from file */
+	return 0;
+}
+
+int process_command(int command_key)
+{
+	switch (command_key)
+	{
+	case 'q':
+		do_exit = true;
+		break;
+	case 's':
+		save_baseline();
+		break;
+
+	default:
+		break;
+	}
+
+	return 0;
+}
 
 struct timeval usb_transfer_time;
 
@@ -237,7 +315,7 @@ int rx_callback(hackrf_transfer *transfer)
 	uint32_t record_length;
 	int i, j, ifft_bins;
 	struct tm *fft_time;
-	char time_str[50];
+	char time_str[50];	
 
 	if (NULL == outfile)
 	{
@@ -418,20 +496,23 @@ int rx_callback(hackrf_transfer *transfer)
 			// 	(uint64_t) (frequency + ((DEFAULT_SAMPLE_RATE_HZ * 3) / 4)),
 			// 	fft_bin_width,
 			// 	fftSize);
+			pthread_mutex_lock(&mutex);
+
 			for (i = 0; (fftSize / 4) > i; i++)
 			{
 				float power_val = pwr[i + 1 + (fftSize / 8)];
 
 				fprintf(outfile, ", %.2f", power_val);
-				baseline[frequency/6000+i] = power_val;
+				baseline[frequency / 6000 + i] = power_val;
 
-				if (frequency/6000 == 77500 && i == 0 && sweep_count % 10 == 0)
+				if (frequency / 6000 == 77500 && i == 0 && sweep_count % 10 == 0)
 					fprintf(stderr, "77500 Power: %.2f\n", power_val);
 
 				int32_t thresh = threshold * -1;
 				if (power_val > thresh)
 					fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
 			}
+			pthread_mutex_unlock(&mutex);
 			// fprintf(outfile, "\n");
 		}
 	}
@@ -990,6 +1071,14 @@ int main(int argc, char **argv)
 	{
 		float time_difference;
 		m_sleep(50);
+
+		if (kbhit())
+		{
+			int key_pressed = getchar();
+			fprintf(stderr, "\nKey pressed: %c.\n", key_pressed);
+
+			process_command(key_pressed);
+		}
 
 		gettimeofday(&time_now, NULL);
 		if (TimevalDiff(&time_now, &time_prev) >= 1.0f)
