@@ -246,7 +246,12 @@ int save_baseline()
 	memset(save_baseline, 0, BASELINE_SIZE*(sizeof(save_baseline[0])));
 	
 	pthread_mutex_lock(&mutex);
-	memcpy(save_baseline, baseline, sizeof(save_baseline));
+	/* memcpy(save_baseline, baseline, sizeof(save_baseline)); */
+	int j = 0;
+    for (j = 0; j < BASELINE_SIZE; j++) 
+	{
+        save_baseline[j] = baseline[j];
+    }
 	pthread_mutex_unlock(&mutex);
 
     FILE *file = fopen("baseline.txt", "w");
