@@ -254,7 +254,7 @@ int save_baseline()
     }
 	pthread_mutex_unlock(&mutex);
 
-    FILE *file = fopen("baseline.txt", "w");
+    FILE *file = fopen("/tmp/baseline.txt", "w");
     if (file == NULL) {
         perror("Error opening file");
         return 1;
