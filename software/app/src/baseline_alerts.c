@@ -1,26 +1,3 @@
-/*
- * Copyright 2016-2022 Great Scott Gadgets <info@greatscottgadgets.com>
- * Copyright 2016 Dominic Spill <dominicgs@gmail.com>
- * Copyright 2016 Mike Walters <mike@flomp.net>
- *
- * This file is part of HackRF.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; see the file COPYING.  If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street,
- * Boston, MA 02110-1301, USA.
- */
-
 #include <hackrf.h>
 
 #include <stdio.h>
@@ -28,6 +5,12 @@
 #include <string.h>
 #include <getopt.h>
 #include <time.h>
+
+#include <unistd.h>
+#include <termios.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <pthread.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -110,6 +93,8 @@ int gettimeofday(struct timeval *tv, void *ignored)
 #define m_sleep(a) usleep((a * 1000))
 #endif
 
+#define BASELINE_SIZE 1000000
+
 uint32_t num_sweeps = 0;
 int num_ranges = 0;
 uint16_t frequencies[MAX_SWEEP_RANGES * 2];
@@ -119,6 +104,34 @@ uint32_t threshold = 55;
 static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 {
 	return (a->tv_sec - b->tv_sec) + 1e-6f * (a->tv_usec - b->tv_usec);
+}
+
+// Function to check if a key has been pressed
+int kbhit(void)
+{
+	struct termios oldt, newt;
+	int ch;
+	int oldf;
+
+	tcgetattr(STDIN_FILENO, &oldt);
+	newt = oldt;
+	newt.c_lflag &= ~(ICANON | ECHO);
+	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+	oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
+	fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
+
+	ch = getchar();
+
+	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+	fcntl(STDIN_FILENO, F_SETFL, oldf);
+
+	if (ch != EOF)
+	{
+		ungetc(ch, stdin);
+		return 1;
+	}
+
+	return 0;
 }
 
 int parse_u32(char *s, uint32_t *const value)
@@ -187,7 +200,7 @@ volatile bool do_exit = false;
 
 FILE *outfile = NULL;
 volatile uint32_t byte_count = 0;
-volatile uint64_t sweep_count = 0;
+volatile unsigned int sweep_count = 0;
 
 struct timeval time_start;
 struct timeval t_start;
@@ -217,6 +230,74 @@ uint32_t ifft_idx = 0;
 float *pwr;
 float *window;
 
+/* New stuff*/
+float baseline[BASELINE_SIZE];
+bool b_quit = false;
+pthread_mutex_t mutex;
+
+int save_baseline()
+{
+	/* set baserline lock, memcpy, unlock, save copy to file*/
+	    // Open a file for writing
+	
+	fprintf(stderr, "Saving %u size baseline to file...\n", BASELINE_SIZE);
+
+	int save_baseline[BASELINE_SIZE];
+	memset(save_baseline, 0, BASELINE_SIZE*(sizeof(save_baseline[0])));
+	
+	pthread_mutex_lock(&mutex);
+	/* memcpy(save_baseline, baseline, sizeof(save_baseline)); */
+	int j = 0;
+    for (j = 0; j < BASELINE_SIZE; j++) 
+	{
+        save_baseline[j] = baseline[j];
+    }
+	pthread_mutex_unlock(&mutex);
+
+    FILE *file = fopen("/tmp/baseline.txt", "w");
+    if (file == NULL) {
+        perror("Error opening file");
+        return 1;
+    }
+
+    // Write the array to the file
+	int i = 0;
+    for (i = 0; i < BASELINE_SIZE; i++) 
+	{
+        fprintf(file, "%d\n", save_baseline[i]);
+    }
+
+    // Close the file
+    fclose(file);
+
+	fprintf(stderr, "Saved %u size baseline to file\n", BASELINE_SIZE);
+	return 0;	
+}
+
+int load_baseline()
+{
+	/* load baseline from file */
+	return 0;
+}
+
+int process_command(int command_key)
+{
+	switch (command_key)
+	{
+	case 'q':
+		do_exit = true;
+		break;
+	case 's':
+		save_baseline();
+		break;
+
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 struct timeval usb_transfer_time;
 
 float logPower(fftwf_complex in, float scale)
@@ -231,12 +312,12 @@ int rx_callback(hackrf_transfer *transfer)
 {
 	int8_t *buf;
 	uint8_t *ubuf;
-	uint64_t frequency; /* in Hz */
+	unsigned int frequency; /* in Hz */
 	uint64_t band_edge;
 	uint32_t record_length;
 	int i, j, ifft_bins;
 	struct tm *fft_time;
-	char time_str[50];
+	char time_str[50];	
 
 	if (NULL == outfile)
 	{
@@ -259,6 +340,7 @@ int rx_callback(hackrf_transfer *transfer)
 	byte_count += transfer->valid_length;
 	buf = (int8_t *)transfer->buffer;
 	ifft_bins = fftSize * step_count;
+
 	for (j = 0; j < BLOCKS_PER_TRANSFER; j++)
 	{
 		ubuf = (uint8_t *)buf;
@@ -284,6 +366,7 @@ int rx_callback(hackrf_transfer *transfer)
 				if (ifft_output)
 				{
 					fftwf_execute(ifftwPlan);
+					
 					for (i = 0; i < ifft_bins; i++)
 					{
 						ifftwOut[i][0] *= 1.0f / ifft_bins;
@@ -333,99 +416,41 @@ int rx_callback(hackrf_transfer *transfer)
 		}
 		/* copy to fftwIn as floats */
 		buf += BYTES_PER_BLOCK - (fftSize * 2);
+		
 		for (i = 0; i < fftSize; i++)
 		{
 			fftwIn[i][0] = buf[i * 2] * window[i] * 1.0f / 128.0f;
 			fftwIn[i][1] = buf[i * 2 + 1] * window[i] * 1.0f / 128.0f;
 		}
+
 		buf += fftSize * 2;
 		fftwf_execute(fftwPlan);
+
 		for (i = 0; i < fftSize; i++)
 		{
 			pwr[i] = logPower(fftwOut[i], 1.0f / fftSize);
 		}
-		if (binary_output)
-		{
-			record_length =
-				2 * sizeof(band_edge) + (fftSize / 4) * sizeof(float);
+		
+		time_t time_stamp_seconds = usb_transfer_time.tv_sec;
+		fft_time = localtime(&time_stamp_seconds);
+		strftime(time_str, 50, "%Y-%m-%d, %H:%M:%S", fft_time);
+		
+		pthread_mutex_lock(&mutex);
 
-			fwrite(&record_length, sizeof(record_length), 1, outfile);
-			band_edge = frequency;
-			fwrite(&band_edge, sizeof(band_edge), 1, outfile);
-			band_edge = frequency + DEFAULT_SAMPLE_RATE_HZ / 4;
-			fwrite(&band_edge, sizeof(band_edge), 1, outfile);
-			fwrite(&pwr[1 + (fftSize * 5) / 8],
-				   sizeof(float),
-				   fftSize / 4,
-				   outfile);
-
-			fwrite(&record_length, sizeof(record_length), 1, outfile);
-			band_edge = frequency + DEFAULT_SAMPLE_RATE_HZ / 2;
-			fwrite(&band_edge, sizeof(band_edge), 1, outfile);
-			band_edge = frequency + (DEFAULT_SAMPLE_RATE_HZ * 3) / 4;
-			fwrite(&band_edge, sizeof(band_edge), 1, outfile);
-			fwrite(&pwr[1 + fftSize / 8], sizeof(float), fftSize / 4, outfile);
-		}
-		else if (ifft_output)
+		for (i = 0; i < fftSize; i++)
 		{
-			ifft_idx = (uint32_t)round(
-				(frequency - (uint64_t)(FREQ_ONE_MHZ * frequencies[0])) /
-				fft_bin_width);
-			ifft_idx = (ifft_idx + ifft_bins / 2) % ifft_bins;
-			for (i = 0; (fftSize / 4) > i; i++)
-			{
-				ifftwIn[ifft_idx + i][0] =
-					fftwOut[i + 1 + (fftSize * 5) / 8][0];
-				ifftwIn[ifft_idx + i][1] =
-					fftwOut[i + 1 + (fftSize * 5) / 8][1];
-			}
-			ifft_idx += fftSize / 2;
-			ifft_idx %= ifft_bins;
-			for (i = 0; (fftSize / 4) > i; i++)
-			{
-				ifftwIn[ifft_idx + i][0] =
-					fftwOut[i + 1 + (fftSize / 8)][0];
-				ifftwIn[ifft_idx + i][1] =
-					fftwOut[i + 1 + (fftSize / 8)][1];
-			}
-		}
-		else
-		{
-			time_t time_stamp_seconds = usb_transfer_time.tv_sec;
-			fft_time = localtime(&time_stamp_seconds);
-			strftime(time_str, 50, "%Y-%m-%d, %H:%M:%S", fft_time);
-			// fprintf(outfile,
-			// 	"%s.%06ld, %" PRIu64 ", %" PRIu64 ", %.2f, %u",
-			// 	time_str,
-			// 	(long int) usb_transfer_time.tv_usec,
-			// 	(uint64_t) (frequency),
-			// 	(uint64_t) (frequency + DEFAULT_SAMPLE_RATE_HZ / 4),
-			// 	fft_bin_width,
-			// 	fftSize);
-			// for (i = 0; (fftSize / 4) > i; i++) {
-			// 	fprintf(outfile,
-			// 		", %.2f",
-			// 		pwr[i + 1 + (fftSize * 5) / 8]);
-			// }
-			// fprintf(outfile, "\n");
-			// fprintf(outfile,
-			// 	"%s.%06ld, %" PRIu64 ", %" PRIu64 ", %.2f, %u",
-			// 	time_str,
-			// 	(long int) usb_transfer_time.tv_usec,
-			// 	(uint64_t) (frequency + (DEFAULT_SAMPLE_RATE_HZ / 2)),
-			// 	(uint64_t) (frequency + ((DEFAULT_SAMPLE_RATE_HZ * 3) / 4)),
-			// 	fft_bin_width,
-			// 	fftSize);
-			for (i = 0; (fftSize / 4) > i; i++)
-			{
-				fprintf(outfile, ", %.2f", pwr[i + 1 + (fftSize / 8)]);
+			fprintf(outfile, ", %.2f", pwr[i]);
+			baseline[(frequency / 6000) + i] = pwr[i];
 
-				int32_t thresh = threshold * -1;
-				if (pwr[i + 1 + (fftSize / 8)] > thresh)
-					fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
-			}
-			// fprintf(outfile, "\n");
+			if (frequency / 6000 == 77500 && i == 0 && sweep_count % 10 == 0)
+				fprintf(stderr, "77500 Power: %.2f\n", pwr[i]);
+
+			int32_t thresh = threshold * -1;
+			if (pwr[i] > thresh)
+				fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
 		}
+
+		pthread_mutex_unlock(&mutex);	
 	}
 	return 0;
 }
@@ -771,6 +796,7 @@ int main(int argc, char **argv)
 		fftwf_plan_dft_1d(fftSize, fftwIn, fftwOut, FFTW_FORWARD, fftw_plan_type);
 	pwr = (float *)fftwf_malloc(sizeof(float) * fftSize);
 	window = (float *)fftwf_malloc(sizeof(float) * fftSize);
+
 	for (i = 0; i < fftSize; i++)
 	{
 		window[i] = (float)(0.5f * (1.0f - cos(2 * M_PI * i / (fftSize - 1))));
@@ -982,14 +1008,22 @@ int main(int argc, char **argv)
 		float time_difference;
 		m_sleep(50);
 
+		if (kbhit())
+		{
+			int key_pressed = getchar();
+			fprintf(stderr, "\nKey pressed: %c.\n", key_pressed);
+
+			process_command(key_pressed);
+		}
+
 		gettimeofday(&time_now, NULL);
 		if (TimevalDiff(&time_now, &time_prev) >= 1.0f)
 		{
 			time_difference = TimevalDiff(&time_now, &t_start);
 			sweep_rate = (float)sweep_count / time_difference;
 			fprintf(stderr,
-					"%" PRIu64
-					" total sweeps completed, %.2f sweeps/second\n",
+					
+					"%u total sweeps completed, %.2f sweeps/second\n",
 					sweep_count,
 					sweep_rate);
 
@@ -1026,7 +1060,7 @@ int main(int argc, char **argv)
 		sweep_rate = sweep_count / time_diff;
 	}
 	fprintf(stderr,
-			"Total sweeps: %" PRIu64 " in %.5f seconds (%.2f sweeps/second)\n",
+			"Total sweeps: %u in %.5f seconds (%.2f sweeps/second)\n",
 			sweep_count,
 			time_diff,
 			sweep_rate);
