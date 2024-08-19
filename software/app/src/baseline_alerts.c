@@ -99,7 +99,7 @@ uint32_t num_sweeps = 0;
 int num_ranges = 0;
 uint16_t frequencies[MAX_SWEEP_RANGES * 2];
 int step_count;
-uint32_t threshold = 55;
+uint32_t threshold = 70;
 
 static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 {
@@ -440,13 +440,12 @@ int rx_callback(hackrf_transfer *transfer)
 		for (i = 0; i < fftSize; i++)
 		{
 			fprintf(outfile, ", %.2f", pwr[i]);
-			baseline[(frequency / 6000) + i] = pwr[i];
 
-			if (frequency / 6000 == 77500 && i == 0 && sweep_count % 10 == 0)
-				fprintf(stderr, "77500 Power: %.2f\n", pwr[i]);
+			baseline[(frequency / 6000) + i] -= baseline[(frequency / 6000) + i] / 20;
+			baseline[(frequency / 6000) + i] += pwr[i] / 20;
 
 			int32_t thresh = threshold * -1;
-			if (pwr[i] > thresh)
+			if (baseline[(frequency / 6000) + i] > thresh)
 				fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
 		}
 
