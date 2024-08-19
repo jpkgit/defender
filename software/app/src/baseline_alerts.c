@@ -366,6 +366,7 @@ int rx_callback(hackrf_transfer *transfer)
 				if (ifft_output)
 				{
 					fftwf_execute(ifftwPlan);
+					
 					for (i = 0; i < ifft_bins; i++)
 					{
 						ifftwOut[i][0] *= 1.0f / ifft_bins;
@@ -415,108 +416,41 @@ int rx_callback(hackrf_transfer *transfer)
 		}
 		/* copy to fftwIn as floats */
 		buf += BYTES_PER_BLOCK - (fftSize * 2);
+		
 		for (i = 0; i < fftSize; i++)
 		{
 			fftwIn[i][0] = buf[i * 2] * window[i] * 1.0f / 128.0f;
 			fftwIn[i][1] = buf[i * 2 + 1] * window[i] * 1.0f / 128.0f;
 		}
+
 		buf += fftSize * 2;
 		fftwf_execute(fftwPlan);
+
 		for (i = 0; i < fftSize; i++)
 		{
 			pwr[i] = logPower(fftwOut[i], 1.0f / fftSize);
 		}
-		if (binary_output)
+		
+		time_t time_stamp_seconds = usb_transfer_time.tv_sec;
+		fft_time = localtime(&time_stamp_seconds);
+		strftime(time_str, 50, "%Y-%m-%d, %H:%M:%S", fft_time);
+		
+		pthread_mutex_lock(&mutex);
+
+		for (i = 0; i < fftSize; i++)
 		{
-			record_length =
-				2 * sizeof(band_edge) + (fftSize / 4) * sizeof(float);
+			fprintf(outfile, ", %.2f", pwr[i]);
+			baseline[(frequency / 6000) + i] = pwr[i];
 
-			fwrite(&record_length, sizeof(record_length), 1, outfile);
-			band_edge = frequency;
-			fwrite(&band_edge, sizeof(band_edge), 1, outfile);
-			band_edge = frequency + DEFAULT_SAMPLE_RATE_HZ / 4;
-			fwrite(&band_edge, sizeof(band_edge), 1, outfile);
-			fwrite(&pwr[1 + (fftSize * 5) / 8],
-				   sizeof(float),
-				   fftSize / 4,
-				   outfile);
+			if (frequency / 6000 == 77500 && i == 0 && sweep_count % 10 == 0)
+				fprintf(stderr, "77500 Power: %.2f\n", pwr[i]);
 
-			fwrite(&record_length, sizeof(record_length), 1, outfile);
-			band_edge = frequency + DEFAULT_SAMPLE_RATE_HZ / 2;
-			fwrite(&band_edge, sizeof(band_edge), 1, outfile);
-			band_edge = frequency + (DEFAULT_SAMPLE_RATE_HZ * 3) / 4;
-			fwrite(&band_edge, sizeof(band_edge), 1, outfile);
-			fwrite(&pwr[1 + fftSize / 8], sizeof(float), fftSize / 4, outfile);
+			int32_t thresh = threshold * -1;
+			if (pwr[i] > thresh)
+				fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
 		}
-		else if (ifft_output)
-		{
-			ifft_idx = (uint32_t)round(
-				(frequency - (uint64_t)(FREQ_ONE_MHZ * frequencies[0])) /
-				fft_bin_width);
-			ifft_idx = (ifft_idx + ifft_bins / 2) % ifft_bins;
-			for (i = 0; (fftSize / 4) > i; i++)
-			{
-				ifftwIn[ifft_idx + i][0] =
-					fftwOut[i + 1 + (fftSize * 5) / 8][0];
-				ifftwIn[ifft_idx + i][1] =
-					fftwOut[i + 1 + (fftSize * 5) / 8][1];
-			}
-			ifft_idx += fftSize / 2;
-			ifft_idx %= ifft_bins;
-			for (i = 0; (fftSize / 4) > i; i++)
-			{
-				ifftwIn[ifft_idx + i][0] =
-					fftwOut[i + 1 + (fftSize / 8)][0];
-				ifftwIn[ifft_idx + i][1] =
-					fftwOut[i + 1 + (fftSize / 8)][1];
-			}
-		}
-		else
-		{
-			time_t time_stamp_seconds = usb_transfer_time.tv_sec;
-			fft_time = localtime(&time_stamp_seconds);
-			strftime(time_str, 50, "%Y-%m-%d, %H:%M:%S", fft_time);
-			// fprintf(outfile,
-			// 	"%s.%06ld, %" PRIu64 ", %" PRIu64 ", %.2f, %u",
-			// 	time_str,
-			// 	(long int) usb_transfer_time.tv_usec,
-			// 	(uint64_t) (frequency),
-			// 	(uint64_t) (frequency + DEFAULT_SAMPLE_RATE_HZ / 4),
-			// 	fft_bin_width,
-			// 	fftSize);
-			// for (i = 0; (fftSize / 4) > i; i++) {
-			// 	fprintf(outfile,
-			// 		", %.2f",
-			// 		pwr[i + 1 + (fftSize * 5) / 8]);
-			// }
-			// fprintf(outfile, "\n");
-			// fprintf(outfile,
-			// 	"%s.%06ld, %" PRIu64 ", %" PRIu64 ", %.2f, %u",
-			// 	time_str,
-			// 	(long int) usb_transfer_time.tv_usec,
-			// 	(uint64_t) (frequency + (DEFAULT_SAMPLE_RATE_HZ / 2)),
-			// 	(uint64_t) (frequency + ((DEFAULT_SAMPLE_RATE_HZ * 3) / 4)),
-			// 	fft_bin_width,
-			// 	fftSize);
-			pthread_mutex_lock(&mutex);
 
-			for (i = 0; (fftSize / 4) > i; i++)
-			{
-				float power_val = pwr[i + 1 + (fftSize / 8)];
-
-				fprintf(outfile, ", %.2f", power_val);
-				baseline[(frequency / 6000) + i] = power_val;
-
-				if (frequency / 6000 == 77500 && i == 0 && sweep_count % 10 == 0)
-					fprintf(stderr, "77500 Power: %.2f\n", power_val);
-
-				int32_t thresh = threshold * -1;
-				if (power_val > thresh)
-					fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
-			}
-			pthread_mutex_unlock(&mutex);
-			// fprintf(outfile, "\n");s
-		}
+		pthread_mutex_unlock(&mutex);	
 	}
 	return 0;
 }
