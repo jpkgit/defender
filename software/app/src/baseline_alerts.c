@@ -99,7 +99,7 @@ uint32_t num_sweeps = 0;
 int num_ranges = 0;
 uint16_t frequencies[MAX_SWEEP_RANGES * 2];
 int step_count;
-uint32_t threshold = 70;
+int threshold = -70;
 
 static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 {
@@ -132,6 +132,13 @@ int kbhit(void)
 	}
 
 	return 0;
+}
+
+int parse_int(char *s, int *const value)
+{
+	int i = atoi(s);
+	*value = i;
+	return HACKRF_SUCCESS;
 }
 
 int parse_u32(char *s, uint32_t *const value)
@@ -444,8 +451,8 @@ int rx_callback(hackrf_transfer *transfer)
 			baseline[(frequency / 6000) + i] -= baseline[(frequency / 6000) + i] / 20;
 			baseline[(frequency / 6000) + i] += pwr[i] / 20;
 
-			int32_t thresh = threshold * -1;
-			if (baseline[(frequency / 6000) + i] > thresh)
+			int val = baseline[(frequency / 6000) + i];
+			if (val > threshold)
 				fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
 		}
 
@@ -667,7 +674,7 @@ int main(int argc, char **argv)
 			break;
 
 		case 't':
-			result = parse_u32(optarg, &threshold);
+			result = parse_int(optarg, &threshold);			
 			break;
 
 		case 'h':
