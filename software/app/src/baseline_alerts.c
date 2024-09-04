@@ -448,10 +448,11 @@ int rx_callback(hackrf_transfer *transfer)
 		{
 			fprintf(outfile, ", %.2f", pwr[i]);
 
-			baseline[(frequency / 6000) + i] -= baseline[(frequency / 6000) + i] / 20;
-			baseline[(frequency / 6000) + i] += pwr[i] / 20;
+			//baseline[(frequency / 6000) + i] -= baseline[(frequency / 6000) + i] / 20;
+			//baseline[(frequency / 6000) + i] += pwr[i] / 20;
+			baseline[(frequency / 6000) + i] = pwr[i];
 
-			int val = baseline[(frequency / 6000) + i];
+			float val = baseline[(frequency / 6000) + i];
 			if (val > threshold)
 				fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
 		}
