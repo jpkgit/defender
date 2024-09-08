@@ -258,6 +258,21 @@ int decrease_threshold()
 	return 0;
 }
 
+int increase_average()
+{
+	fprintf(stderr, "Increased average to: [%d]\n", average);
+	average++;
+	return 0;
+}
+
+int decrease_average()
+{
+	fprintf(stderr, "Decreased average to: [%d]\n", average);
+	average--;
+	return 0;
+}
+
+
 int save_baseline()
 {
 	/* set baserline lock, memcpy, unlock, save copy to file*/
@@ -318,7 +333,14 @@ int process_command(int command_key)
 		break;		
 	case 'd':
 		decrease_threshold();
-		break;				
+		break;		
+	case 'a':
+		increase_average();
+		break;		
+	case 'z':
+		decrease_average();
+		break;						
+
 
 	default:
 		break;
