@@ -100,6 +100,9 @@ int num_ranges = 0;
 uint16_t frequencies[MAX_SWEEP_RANGES * 2];
 int step_count;
 int threshold = -70;
+int average = 10;
+int average_count = 0;
+int first_frequency_array_bin = 0;
 
 static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 {
@@ -444,21 +447,42 @@ int rx_callback(hackrf_transfer *transfer)
 		strftime(time_str, 50, "%Y-%m-%d, %H:%M:%S", fft_time);
 		
 		pthread_mutex_lock(&mutex);
+		
+		float alpha = 2.0/(average+1.0);
 
 		for (i = 0; i < fftSize; i++)
 		{
 			// Disabled outfile
 			//fprintf(outfile, ", %.2f", pwr[i]);			
 			int frequency_array_bin = (frequency / 6000) + i;
-			baseline[frequency_array_bin] = pwr[i];
-			float power_val = baseline[frequency_array_bin];
 
-			if (power_val > threshold)
+			if (first_frequency_array_bin == 0)
+				first_frequency_array_bin = frequency_array_bin;
+
+			if (average < 1)
+			{
+				baseline[frequency_array_bin] = pwr[i];
+			}
+			else
+			{				
+				baseline[frequency_array_bin] = alpha * pwr[i] + (1 - alpha) * baseline[frequency_array_bin];
+				
+				if (i == 0 && first_frequency_array_bin == frequency_array_bin)
+					average_count++;
+				
+				if (i == 0 && average_count > average)
+				{
+					fprintf(stderr, "Averaged %d values\n", average);
+					average_count = 0;
+				}
+			}
+
+			if (baseline[frequency_array_bin] > threshold)
 			{
 				float freq_mhz = (float)(frequency-(fftSize/2+i))/1000000;
 
 				fprintf(stderr, "Alert at freq %f MHz, power %f, threshold %d, sweep count: %u\n",
-				 freq_mhz, power_val, threshold, sweep_count);
+				 freq_mhz, baseline[frequency_array_bin], threshold, sweep_count);
 			}
 		}
 
