@@ -19,6 +19,8 @@
 #include <fftw3.h>
 #include <inttypes.h>
 
+#include <math.h>
+
 #define _FILE_OFFSET_BITS 64
 
 #ifndef bool
@@ -99,10 +101,11 @@ uint32_t num_sweeps = 0;
 int num_ranges = 0;
 uint16_t frequencies[MAX_SWEEP_RANGES * 2];
 int step_count;
-int threshold = -70;
+int threshold = -81;
 int average = 10;
 int average_count = 0;
 int first_frequency_array_bin = 0;
+int gray_area = 20;
 
 static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 {
@@ -241,6 +244,8 @@ float *window;
 
 /* New stuff*/
 float baseline[BASELINE_SIZE];
+float saved_baseline[BASELINE_SIZE];
+bool baseline_saved = false;
 bool b_quit = false;
 pthread_mutex_t mutex;
 
@@ -279,17 +284,23 @@ int save_baseline()
 	    // Open a file for writing
 	
 	fprintf(stderr, "Saving %u size baseline to file...\n", BASELINE_SIZE);
-
-	int save_baseline[BASELINE_SIZE];
-	memset(save_baseline, 0, BASELINE_SIZE*(sizeof(save_baseline[0])));
+	
+	int index = 0;
+	for (index = 0; index < BASELINE_SIZE;index++)
+	{
+		saved_baseline[index] = -80.0;
+ 	}
 	
 	pthread_mutex_lock(&mutex);
-	/* memcpy(save_baseline, baseline, sizeof(save_baseline)); */
+
 	int j = 0;
     for (j = 0; j < BASELINE_SIZE; j++) 
 	{
-        save_baseline[j] = baseline[j];
+        saved_baseline[j] = baseline[j];
     }
+	
+	baseline_saved = true;
+	
 	pthread_mutex_unlock(&mutex);
 
     FILE *file = fopen("/tmp/baseline.txt", "w");
@@ -302,7 +313,7 @@ int save_baseline()
 	int i = 0;
     for (i = 0; i < BASELINE_SIZE; i++) 
 	{
-        fprintf(file, "%d\n", save_baseline[i]);
+        fprintf(file, "%f\n", saved_baseline[i]);
     }
 
     // Close the file
@@ -499,11 +510,23 @@ int rx_callback(hackrf_transfer *transfer)
 				}
 			}
 
-			if (baseline[frequency_array_bin] > threshold)
+			if (baseline_saved)
+			{
+				float diff = fabs(baseline[frequency_array_bin] - saved_baseline[frequency_array_bin]);
+				
+				if (diff > gray_area)
+				{
+					float freq_mhz = (float)(frequency-(fftSize/2+i))/1000000;
+
+					fprintf(stderr, "Baseline alert at freq %f MHz, power %f, baseline differnce %f, sweep count: %u\n",
+					freq_mhz, baseline[frequency_array_bin], diff, sweep_count);
+				}
+			}
+			else if (baseline[frequency_array_bin] > threshold)
 			{
 				float freq_mhz = (float)(frequency-(fftSize/2+i))/1000000;
 
-				fprintf(stderr, "Alert at freq %f MHz, power %f, threshold %d, sweep count: %u\n",
+				fprintf(stderr, "Simple threshold alert at freq %f MHz, power %f, threshold %d, sweep count: %u\n",
 				 freq_mhz, baseline[frequency_array_bin], threshold, sweep_count);
 			}
 		}
