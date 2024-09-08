@@ -452,9 +452,10 @@ int rx_callback(hackrf_transfer *transfer)
 			//baseline[(frequency / 6000) + i] += pwr[i] / 20;
 			baseline[(frequency / 6000) + i] = pwr[i];
 
-			float val = baseline[(frequency / 6000) + i];
-			if (val > threshold)
-				fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
+			float power_val = baseline[(frequency / 6000) + i];
+			if (power_val > threshold)
+				fprintf(stderr, "Alert at freq %u, power %f, threshold %d, sweep count: %u\n",
+				 frequency, power_val, threshold, sweep_count);
 		}
 
 		pthread_mutex_unlock(&mutex);	
