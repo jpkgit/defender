@@ -242,6 +242,20 @@ float baseline[BASELINE_SIZE];
 bool b_quit = false;
 pthread_mutex_t mutex;
 
+int increase_threshold()
+{
+	threshold++;
+	fprintf(stderr, "Increased threshold to: [%d]\n", threshold);
+	return 0;
+}
+
+int decrease_threshold()
+{
+	fprintf(stderr, "Decreased threshold to: [%d]\n", threshold);
+	threshold--;
+	return 0;
+}
+
 int save_baseline()
 {
 	/* set baserline lock, memcpy, unlock, save copy to file*/
@@ -297,6 +311,12 @@ int process_command(int command_key)
 	case 's':
 		save_baseline();
 		break;
+	case 'i':
+		increase_threshold();
+		break;		
+	case 'd':
+		decrease_threshold();
+		break;				
 
 	default:
 		break;
@@ -453,8 +473,10 @@ int rx_callback(hackrf_transfer *transfer)
 
 			if (power_val > threshold)
 			{
-				fprintf(stderr, "Alert at freq %u, power %f, threshold %d, sweep count: %u\n",
-				 frequency-(fftSize/2+i), power_val, threshold, sweep_count);
+				float freq_mhz = (float)(frequency-(fftSize/2+i))/1000000;
+
+				fprintf(stderr, "Alert at freq %f MHz, power %f, threshold %d, sweep count: %u\n",
+				 freq_mhz, power_val, threshold, sweep_count);
 			}
 		}
 
@@ -1029,11 +1051,11 @@ int main(int argc, char **argv)
 		{
 			time_difference = TimevalDiff(&time_now, &t_start);
 			sweep_rate = (float)sweep_count / time_difference;
-			fprintf(stderr,
-					
-					"%u total sweeps completed, %.2f sweeps/second\n",
-					sweep_count,
-					sweep_rate);
+			
+			// fprintf(stderr,					
+			// 		"%u total sweeps completed, %.2f sweeps/second\n",
+			// 		sweep_count,
+			// 		sweep_rate);
 
 			if (byte_count == 0)
 			{
