@@ -220,7 +220,6 @@ uint32_t antenna_enable;
 
 bool timestamp_normalized = false;
 bool binary_output = false;
-bool ifft_output = false;
 bool one_shot = false;
 bool finite_mode = false;
 volatile bool sweep_started = false;
@@ -921,25 +920,6 @@ int main(int argc, char **argv)
 				"Sweeping from %u MHz to %u MHz\n",
 				frequencies[2 * i],
 				frequencies[2 * i + 1]);
-	}
-
-	if (ifft_output)
-	{
-		ifftwIn = (fftwf_complex *)fftwf_malloc(
-			sizeof(fftwf_complex) * fftSize * step_count);
-		ifftwOut = (fftwf_complex *)fftwf_malloc(
-			sizeof(fftwf_complex) * fftSize * step_count);
-		ifftwPlan = fftwf_plan_dft_1d(
-			fftSize * step_count,
-			ifftwIn,
-			ifftwOut,
-			FFTW_BACKWARD,
-			fftw_plan_type);
-
-		/* Execute the plan once to make sure it's ready to go when real
-		 * data starts to flow.  See issue #1366
-		 */
-		fftwf_execute(ifftwPlan);
 	}
 
 	result = hackrf_init_sweep(
