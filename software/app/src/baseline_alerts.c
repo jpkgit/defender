@@ -105,7 +105,7 @@ int threshold = -81;
 int average = 10;
 int average_count = 0;
 int first_frequency_array_bin = 0;
-int gray_area = 20;
+int baseline_alert_offset = 20;
 
 static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 {
@@ -277,6 +277,20 @@ int decrease_average()
 	return 0;
 }
 
+int increase_alert_offset()
+{
+	fprintf(stderr, "Increased baseline alert offset to: [%d]\n", baseline_alert_offset);
+	baseline_alert_offset++;
+	return 0;
+}
+
+int decrease_alert_offset()
+{
+	fprintf(stderr, "Decreased baseline alert offset to: [%d]\n", baseline_alert_offset);
+	baseline_alert_offset--;
+	return 0;
+}
+
 
 int save_baseline()
 {
@@ -351,7 +365,12 @@ int process_command(int command_key)
 	case 'z':
 		decrease_average();
 		break;						
-
+	case 'o':
+		increase_alert_offset();
+		break;		
+	case 'p':
+		decrease_alert_offset();
+		break;	
 
 	default:
 		break;
@@ -514,7 +533,7 @@ int rx_callback(hackrf_transfer *transfer)
 			{
 				float diff = fabs(baseline[frequency_array_bin] - saved_baseline[frequency_array_bin]);
 				
-				if (diff > gray_area)
+				if (diff > baseline_alert_offset)
 				{
 					float freq_mhz = (float)(frequency-(fftSize/2+i))/1000000;
 
