@@ -389,25 +389,7 @@ int rx_callback(hackrf_transfer *transfer)
 		if (frequency == (uint64_t)(FREQ_ONE_MHZ * frequencies[0]))
 		{
 			if (sweep_started)
-			{
-				if (ifft_output)
-				{
-					fftwf_execute(ifftwPlan);
-					
-					for (i = 0; i < ifft_bins; i++)
-					{
-						ifftwOut[i][0] *= 1.0f / ifft_bins;
-						ifftwOut[i][1] *= 1.0f / ifft_bins;
-						fwrite(&ifftwOut[i][0],
-							   sizeof(float),
-							   1,
-							   outfile);
-						fwrite(&ifftwOut[i][1],
-							   sizeof(float),
-							   1,
-							   outfile);
-					}
-				}
+			{				
 				sweep_count++;
 
 				if (timestamp_normalized == true)
@@ -504,7 +486,6 @@ static void usage()
 			"\t[-1] # one shot mode\n"
 			"\t[-N num_sweeps] # Number of sweeps to perform\n"
 			"\t[-B] # binary output\n"
-			"\t[-I] # binary inverse FFT output\n"
 			"\t[-n] # keep the same timestamp within a sweep\n"
 			"\t-r filename # output file\n"
 			"\n"
@@ -581,7 +562,14 @@ int main(int argc, char **argv)
 	uint32_t freq_max = 6000;
 	uint32_t requested_fft_bin_width;
 	const char *fftwWisdomPath = NULL;
-	int fftw_plan_type = FFTW_MEASURE;
+	int fftw_plan_type = FFTW_MEASURE;	
+	
+	int index = 0;
+	
+	for (index = 0; index < BASELINE_SIZE; index++)
+	{
+		baseline[index] = -80.0;
+	}
 
 	while ((opt = getopt(argc, argv, "a:f:p:l:g:d:N:w:W:P:n1BIr:t:h?")) != EOF)
 	{
@@ -690,10 +678,6 @@ int main(int argc, char **argv)
 			binary_output = true;
 			break;
 
-		case 'I':
-			ifft_output = true;
-			break;
-
 		case 'r':
 			path = optarg;
 			break;
@@ -768,20 +752,6 @@ int main(int argc, char **argv)
 		frequencies[0] = (uint16_t)freq_min;
 		frequencies[1] = (uint16_t)freq_max;
 		num_ranges++;
-	}
-
-	if (binary_output && ifft_output)
-	{
-		fprintf(stderr,
-				"argument error: binary output (-B) and IFFT output (-I) are mutually exclusive.\n");
-		return EXIT_FAILURE;
-	}
-
-	if (ifft_output && (1 < num_ranges))
-	{
-		fprintf(stderr,
-				"argument error: only one frequency range is supported in IFFT output (-I) mode.\n");
-		return EXIT_FAILURE;
 	}
 
 	/*
