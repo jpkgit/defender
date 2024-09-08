@@ -446,16 +446,16 @@ int rx_callback(hackrf_transfer *transfer)
 
 		for (i = 0; i < fftSize; i++)
 		{
-			fprintf(outfile, ", %.2f", pwr[i]);
+			fprintf(outfile, ", %.2f", pwr[i]);			
+			int frequency_array_bin = (frequency / 6000) + i;
+			baseline[frequency_array_bin] = pwr[i];
+			float power_val = baseline[frequency_array_bin];
 
-			//baseline[(frequency / 6000) + i] -= baseline[(frequency / 6000) + i] / 20;
-			//baseline[(frequency / 6000) + i] += pwr[i] / 20;
-			baseline[(frequency / 6000) + i] = pwr[i];
-
-			float power_val = baseline[(frequency / 6000) + i];
 			if (power_val > threshold)
+			{
 				fprintf(stderr, "Alert at freq %u, power %f, threshold %d, sweep count: %u\n",
-				 frequency, power_val, threshold, sweep_count);
+				 frequency-(fftSize/2+i), power_val, threshold, sweep_count);
+			}
 		}
 
 		pthread_mutex_unlock(&mutex);	
