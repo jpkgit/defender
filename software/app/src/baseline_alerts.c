@@ -466,7 +466,8 @@ int rx_callback(hackrf_transfer *transfer)
 
 		for (i = 0; i < fftSize; i++)
 		{
-			fprintf(outfile, ", %.2f", pwr[i]);			
+			// Disabled outfile
+			//fprintf(outfile, ", %.2f", pwr[i]);			
 			int frequency_array_bin = (frequency / 6000) + i;
 			baseline[frequency_array_bin] = pwr[i];
 			float power_val = baseline[frequency_array_bin];
