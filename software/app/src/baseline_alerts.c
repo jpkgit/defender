@@ -99,7 +99,10 @@ uint32_t num_sweeps = 0;
 int num_ranges = 0;
 uint16_t frequencies[MAX_SWEEP_RANGES * 2];
 int step_count;
-uint32_t threshold = 55;
+int threshold = -70;
+int average = 10;
+int average_count = 0;
+int first_frequency_array_bin = 0;
 
 static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 {
@@ -132,6 +135,13 @@ int kbhit(void)
 	}
 
 	return 0;
+}
+
+int parse_int(char *s, int *const value)
+{
+	int i = atoi(s);
+	*value = i;
+	return HACKRF_SUCCESS;
 }
 
 int parse_u32(char *s, uint32_t *const value)
@@ -213,7 +223,6 @@ uint32_t antenna_enable;
 
 bool timestamp_normalized = false;
 bool binary_output = false;
-bool ifft_output = false;
 bool one_shot = false;
 bool finite_mode = false;
 volatile bool sweep_started = false;
@@ -234,6 +243,35 @@ float *window;
 float baseline[BASELINE_SIZE];
 bool b_quit = false;
 pthread_mutex_t mutex;
+
+int increase_threshold()
+{
+	threshold++;
+	fprintf(stderr, "Increased threshold to: [%d]\n", threshold);
+	return 0;
+}
+
+int decrease_threshold()
+{
+	fprintf(stderr, "Decreased threshold to: [%d]\n", threshold);
+	threshold--;
+	return 0;
+}
+
+int increase_average()
+{
+	fprintf(stderr, "Increased average to: [%d]\n", average);
+	average++;
+	return 0;
+}
+
+int decrease_average()
+{
+	fprintf(stderr, "Decreased average to: [%d]\n", average);
+	average--;
+	return 0;
+}
+
 
 int save_baseline()
 {
@@ -290,6 +328,19 @@ int process_command(int command_key)
 	case 's':
 		save_baseline();
 		break;
+	case 'i':
+		increase_threshold();
+		break;		
+	case 'd':
+		decrease_threshold();
+		break;		
+	case 'a':
+		increase_average();
+		break;		
+	case 'z':
+		decrease_average();
+		break;						
+
 
 	default:
 		break;
@@ -362,25 +413,7 @@ int rx_callback(hackrf_transfer *transfer)
 		if (frequency == (uint64_t)(FREQ_ONE_MHZ * frequencies[0]))
 		{
 			if (sweep_started)
-			{
-				if (ifft_output)
-				{
-					fftwf_execute(ifftwPlan);
-					
-					for (i = 0; i < ifft_bins; i++)
-					{
-						ifftwOut[i][0] *= 1.0f / ifft_bins;
-						ifftwOut[i][1] *= 1.0f / ifft_bins;
-						fwrite(&ifftwOut[i][0],
-							   sizeof(float),
-							   1,
-							   outfile);
-						fwrite(&ifftwOut[i][1],
-							   sizeof(float),
-							   1,
-							   outfile);
-					}
-				}
+			{				
 				sweep_count++;
 
 				if (timestamp_normalized == true)
@@ -436,18 +469,43 @@ int rx_callback(hackrf_transfer *transfer)
 		strftime(time_str, 50, "%Y-%m-%d, %H:%M:%S", fft_time);
 		
 		pthread_mutex_lock(&mutex);
+		
+		float alpha = 2.0/(average+1.0);
 
 		for (i = 0; i < fftSize; i++)
 		{
-			fprintf(outfile, ", %.2f", pwr[i]);
-			baseline[(frequency / 6000) + i] = pwr[i];
+			// Disabled outfile
+			//fprintf(outfile, ", %.2f", pwr[i]);			
+			int frequency_array_bin = (frequency / 6000) + i;
 
-			if (frequency / 6000 == 77500 && i == 0 && sweep_count % 10 == 0)
-				fprintf(stderr, "77500 Power: %.2f\n", pwr[i]);
+			if (first_frequency_array_bin == 0)
+				first_frequency_array_bin = frequency_array_bin;
 
-			int32_t thresh = threshold * -1;
-			if (pwr[i] > thresh)
-				fprintf(stderr, "Alert at freq %u sweep count: %u\n", frequency, sweep_count);
+			if (average < 1)
+			{
+				baseline[frequency_array_bin] = pwr[i];
+			}
+			else
+			{				
+				baseline[frequency_array_bin] = alpha * pwr[i] + (1 - alpha) * baseline[frequency_array_bin];
+				
+				if (i == 0 && first_frequency_array_bin == frequency_array_bin)
+					average_count++;
+				
+				if (i == 0 && average_count > average)
+				{
+					fprintf(stderr, "Averaged %d values\n", average);
+					average_count = 0;
+				}
+			}
+
+			if (baseline[frequency_array_bin] > threshold)
+			{
+				float freq_mhz = (float)(frequency-(fftSize/2+i))/1000000;
+
+				fprintf(stderr, "Alert at freq %f MHz, power %f, threshold %d, sweep count: %u\n",
+				 freq_mhz, baseline[frequency_array_bin], threshold, sweep_count);
+			}
 		}
 
 		pthread_mutex_unlock(&mutex);	
@@ -473,7 +531,6 @@ static void usage()
 			"\t[-1] # one shot mode\n"
 			"\t[-N num_sweeps] # Number of sweeps to perform\n"
 			"\t[-B] # binary output\n"
-			"\t[-I] # binary inverse FFT output\n"
 			"\t[-n] # keep the same timestamp within a sweep\n"
 			"\t-r filename # output file\n"
 			"\n"
@@ -550,7 +607,14 @@ int main(int argc, char **argv)
 	uint32_t freq_max = 6000;
 	uint32_t requested_fft_bin_width;
 	const char *fftwWisdomPath = NULL;
-	int fftw_plan_type = FFTW_MEASURE;
+	int fftw_plan_type = FFTW_MEASURE;	
+	
+	int index = 0;
+	
+	for (index = 0; index < BASELINE_SIZE; index++)
+	{
+		baseline[index] = -80.0;
+	}
 
 	while ((opt = getopt(argc, argv, "a:f:p:l:g:d:N:w:W:P:n1BIr:t:h?")) != EOF)
 	{
@@ -659,16 +723,12 @@ int main(int argc, char **argv)
 			binary_output = true;
 			break;
 
-		case 'I':
-			ifft_output = true;
-			break;
-
 		case 'r':
 			path = optarg;
 			break;
 
 		case 't':
-			result = parse_u32(optarg, &threshold);
+			result = parse_int(optarg, &threshold);			
 			break;
 
 		case 'h':
@@ -737,20 +797,6 @@ int main(int argc, char **argv)
 		frequencies[0] = (uint16_t)freq_min;
 		frequencies[1] = (uint16_t)freq_max;
 		num_ranges++;
-	}
-
-	if (binary_output && ifft_output)
-	{
-		fprintf(stderr,
-				"argument error: binary output (-B) and IFFT output (-I) are mutually exclusive.\n");
-		return EXIT_FAILURE;
-	}
-
-	if (ifft_output && (1 < num_ranges))
-	{
-		fprintf(stderr,
-				"argument error: only one frequency range is supported in IFFT output (-I) mode.\n");
-		return EXIT_FAILURE;
 	}
 
 	/*
@@ -922,25 +968,6 @@ int main(int argc, char **argv)
 				frequencies[2 * i + 1]);
 	}
 
-	if (ifft_output)
-	{
-		ifftwIn = (fftwf_complex *)fftwf_malloc(
-			sizeof(fftwf_complex) * fftSize * step_count);
-		ifftwOut = (fftwf_complex *)fftwf_malloc(
-			sizeof(fftwf_complex) * fftSize * step_count);
-		ifftwPlan = fftwf_plan_dft_1d(
-			fftSize * step_count,
-			ifftwIn,
-			ifftwOut,
-			FFTW_BACKWARD,
-			fftw_plan_type);
-
-		/* Execute the plan once to make sure it's ready to go when real
-		 * data starts to flow.  See issue #1366
-		 */
-		fftwf_execute(ifftwPlan);
-	}
-
 	result = hackrf_init_sweep(
 		device,
 		frequencies,
@@ -1021,11 +1048,11 @@ int main(int argc, char **argv)
 		{
 			time_difference = TimevalDiff(&time_now, &t_start);
 			sweep_rate = (float)sweep_count / time_difference;
-			fprintf(stderr,
-					
-					"%u total sweeps completed, %.2f sweeps/second\n",
-					sweep_count,
-					sweep_rate);
+			
+			// fprintf(stderr,					
+			// 		"%u total sweeps completed, %.2f sweeps/second\n",
+			// 		sweep_count,
+			// 		sweep_rate);
 
 			if (byte_count == 0)
 			{
