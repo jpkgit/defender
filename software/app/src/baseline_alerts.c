@@ -1,216 +1,5 @@
-#include <hackrf.h>
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <getopt.h>
-#include <time.h>
-
-#include <unistd.h>
-#include <termios.h>
-#include <sys/ioctl.h>
-#include <sys/select.h>
-#include <pthread.h>
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <fftw3.h>
-#include <inttypes.h>
-
-#include <math.h>
-
-#include "fcc_table.h"
-
-#define _FILE_OFFSET_BITS 64
-
-#ifndef bool
-typedef int bool;
-#define true 1
-#define false 0
-#endif
-
-#ifdef _WIN32
-#define _USE_MATH_DEFINES
-#include <windows.h>
-#include <io.h>
-#ifdef _MSC_VER
-
-#ifdef _WIN64
-typedef int64_t ssize_t;
-#else
-typedef int32_t ssize_t;
-#endif
-
-#define strtoull _strtoui64
-#define snprintf _snprintf
-
-int gettimeofday(struct timeval *tv, void *ignored)
-{
-	FILETIME ft;
-	unsigned __int64 tmp = 0;
-	if (NULL != tv)
-	{
-		GetSystemTimeAsFileTime(&ft);
-		tmp |= ft.dwHighDateTime;
-		tmp <<= 32;
-		tmp |= ft.dwLowDateTime;
-		tmp /= 10;
-		tmp -= 11644473600000000Ui64;
-		tv->tv_sec = (long)(tmp / 1000000UL);
-		tv->tv_usec = (long)(tmp % 1000000UL);
-	}
-	return 0;
-}
-
-#endif
-#endif
-
-#if defined(__GNUC__)
-#include <unistd.h>
-#include <sys/time.h>
-#endif
-
-#include <signal.h>
-#include <math.h>
-
-#define FD_BUFFER_SIZE (8 * 1024)
-
-#define FREQ_ONE_MHZ (1000000ull)
-
-#define FREQ_MIN_MHZ (0)	/*    0 MHz */
-#define FREQ_MAX_MHZ (7250) /* 7250 MHz */
-
-#define DEFAULT_SAMPLE_RATE_HZ (20000000)			 /* 20MHz default sample rate */
-#define DEFAULT_BASEBAND_FILTER_BANDWIDTH (15000000) /* 15MHz default */
-
-#define TUNE_STEP (DEFAULT_SAMPLE_RATE_HZ / FREQ_ONE_MHZ)
-#define OFFSET 7500000
-
-#define BLOCKS_PER_TRANSFER 16
-#define THROWAWAY_BLOCKS 2
-
-#if defined _WIN32
-#define m_sleep(a) Sleep((a))
-#else
-#define m_sleep(a) usleep((a * 1000))
-#endif
-
-#define BASELINE_SIZE 1000000
-
-uint32_t num_sweeps = 0;
-int num_ranges = 0;
-uint16_t frequencies[MAX_SWEEP_RANGES * 2];
-int step_count;
-int threshold = -81;
-int average = 10;
-int average_count = 0;
-int first_frequency_array_bin = 0;
-int baseline_alert_offset = 20;
-FrequencyRecord* p_records = 0;
-
-static float TimevalDiff(const struct timeval *a, const struct timeval *b)
-{
-	return (a->tv_sec - b->tv_sec) + 1e-6f * (a->tv_usec - b->tv_usec);
-}
-
-// Function to check if a key has been pressed
-int kbhit(void)
-{
-	struct termios oldt, newt;
-	int ch;
-	int oldf;
-
-	tcgetattr(STDIN_FILENO, &oldt);
-	newt = oldt;
-	newt.c_lflag &= ~(ICANON | ECHO);
-	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-	oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
-	fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
-
-	ch = getchar();
-
-	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
-	fcntl(STDIN_FILENO, F_SETFL, oldf);
-
-	if (ch != EOF)
-	{
-		ungetc(ch, stdin);
-		return 1;
-	}
-
-	return 0;
-}
-
-int parse_int(char *s, int *const value)
-{
-	int i = atoi(s);
-	*value = i;
-	return HACKRF_SUCCESS;
-}
-
-int parse_u32(char *s, uint32_t *const value)
-{
-	uint_fast8_t base = 10;
-	char *s_end;
-	uint64_t ulong_value;
-
-	if (strlen(s) > 2)
-	{
-		if (s[0] == '0')
-		{
-			if ((s[1] == 'x') || (s[1] == 'X'))
-			{
-				base = 16;
-				s += 2;
-			}
-			else if ((s[1] == 'b') || (s[1] == 'B'))
-			{
-				base = 2;
-				s += 2;
-			}
-		}
-	}
-
-	s_end = s;
-	ulong_value = strtoul(s, &s_end, base);
-	if ((s != s_end) && (*s_end == 0))
-	{
-		*value = (uint32_t)ulong_value;
-		return HACKRF_SUCCESS;
-	}
-	else
-	{
-		return HACKRF_ERROR_INVALID_PARAM;
-	}
-}
-
-int parse_u32_range(char *s, uint32_t *const value_min, uint32_t *const value_max)
-{
-	int result;
-
-	char *sep = strchr(s, ':');
-	if (!sep)
-	{
-		return HACKRF_ERROR_INVALID_PARAM;
-	}
-
-	*sep = 0;
-
-	result = parse_u32(s, value_min);
-	if (result != HACKRF_SUCCESS)
-	{
-		return result;
-	}
-	result = parse_u32(sep + 1, value_max);
-	if (result != HACKRF_SUCCESS)
-	{
-		return result;
-	}
-
-	return HACKRF_SUCCESS;
-}
+#include "baseline_alerts.h"
+#include "utilities.h"
 
 volatile bool do_exit = false;
 
@@ -221,6 +10,7 @@ volatile unsigned int sweep_count = 0;
 struct timeval time_start;
 struct timeval t_start;
 
+static hackrf_device *device = NULL;
 bool amp = false;
 uint32_t amp_enable;
 
@@ -244,6 +34,7 @@ fftwf_plan ifftwPlan = NULL;
 uint32_t ifft_idx = 0;
 float *pwr;
 float *window;
+struct timeval usb_transfer_time;
 
 /* New stuff*/
 float baseline[BASELINE_SIZE];
@@ -252,54 +43,14 @@ bool baseline_saved = false;
 bool b_quit = false;
 pthread_mutex_t mutex;
 
-int increase_threshold()
-{
-	threshold++;
-	fprintf(stderr, "Increased threshold to: [%d]\n", threshold);
-	return 0;
-}
 
-int decrease_threshold()
+static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 {
-	fprintf(stderr, "Decreased threshold to: [%d]\n", threshold);
-	threshold--;
-	return 0;
+	return (a->tv_sec - b->tv_sec) + 1e-6f * (a->tv_usec - b->tv_usec);
 }
-
-int increase_average()
-{
-	fprintf(stderr, "Increased average to: [%d]\n", average);
-	average++;
-	return 0;
-}
-
-int decrease_average()
-{
-	fprintf(stderr, "Decreased average to: [%d]\n", average);
-	average--;
-	return 0;
-}
-
-int increase_alert_offset()
-{
-	fprintf(stderr, "Increased baseline alert offset to: [%d]\n", baseline_alert_offset);
-	baseline_alert_offset++;
-	return 0;
-}
-
-int decrease_alert_offset()
-{
-	fprintf(stderr, "Decreased baseline alert offset to: [%d]\n", baseline_alert_offset);
-	baseline_alert_offset--;
-	return 0;
-}
-
 
 int save_baseline()
-{
-	/* set baserline lock, memcpy, unlock, save copy to file*/
-	    // Open a file for writing
-	
+{		
 	fprintf(stderr, "Saving %u size baseline to file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
 	
 	int index = 0;
@@ -310,17 +61,16 @@ int save_baseline()
 	
 	pthread_mutex_lock(&mutex);
 
-	int j = 0;
+	int j = 0;	
     for (j = 0; j < BASELINE_SIZE; j++) 
 	{
         saved_baseline[j] = baseline[j];
     }
 	
-	baseline_saved = true;
-	
+	baseline_saved = true;	
 	pthread_mutex_unlock(&mutex);
-
     FILE *file = fopen("/tmp/baseline.txt", "w");
+
     if (file == NULL) {
         perror("Error opening file");
         return 1;
@@ -328,6 +78,7 @@ int save_baseline()
 
     // Write the array to the file
 	int i = 0;
+
     for (i = 0; i < BASELINE_SIZE; i++) 
 	{
         fprintf(file, "%f\n", saved_baseline[i]);
@@ -335,7 +86,6 @@ int save_baseline()
 
     // Close the file
     fclose(file);
-
 	fprintf(stderr, "Saved %u size baseline to file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
 	return 0;	
 }
@@ -343,13 +93,13 @@ int save_baseline()
 int load_baseline()
  {
     FILE *file = fopen("/tmp/baseline.txt", "r");
+
     if (file == NULL) {
         perror("Error opening file");
         return -1;
     }
 
 	fprintf(stderr, "Loading %u size baseline from file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
-
 	pthread_mutex_lock(&mutex);
 
 	int i = 0;
@@ -369,13 +119,10 @@ int load_baseline()
     }
 
 	pthread_mutex_unlock(&mutex);
-
 	fprintf(stderr, "Loaded %d size baseline from file %s\n", index, "/tmp/baseline.txt");
-
     fclose(file);
     return index;
 }
-
 
 int process_command(int command_key)
 {
@@ -391,22 +138,28 @@ int process_command(int command_key)
 		load_baseline();
 		break;		
 	case 'i':
-		increase_threshold();
+		threshold++;
+		fprintf(stderr, "Increased threshold to: [%d]\n", threshold);
 		break;		
 	case 'd':
-		decrease_threshold();
+		threshold--;
+		fprintf(stderr, "Decreased threshold to: [%d]\n", threshold);
 		break;		
 	case 'a':
-		increase_average();
+		average++;
+		fprintf(stderr, "Increased average to: [%d]\n", average);			
 		break;		
 	case 'z':
-		decrease_average();
+		average--;
+		fprintf(stderr, "Decreased average to: [%d]\n", average);	
 		break;						
 	case 'o':
-		increase_alert_offset();
+		baseline_alert_offset++;
+		fprintf(stderr, "Increased baseline alert offset to: [%d]\n", baseline_alert_offset);	
 		break;		
 	case 'p':
-		decrease_alert_offset();
+		baseline_alert_offset--;
+		fprintf(stderr, "Decreased baseline alert offset to: [%d]\n", baseline_alert_offset);	
 		break;	
 
 	default:
@@ -415,8 +168,6 @@ int process_command(int command_key)
 
 	return 0;
 }
-
-struct timeval usb_transfer_time;
 
 float logPower(fftwf_complex in, float scale)
 {
@@ -459,6 +210,7 @@ int rx_callback(hackrf_transfer *transfer)
 	for (j = 0; j < BLOCKS_PER_TRANSFER; j++)
 	{
 		ubuf = (uint8_t *)buf;
+
 		if (ubuf[0] == 0x7F && ubuf[1] == 0x7F)
 		{
 			frequency = ((uint64_t)(ubuf[9]) << 56) |
@@ -624,8 +376,6 @@ static void usage()
 			"\tdate, time, hz_low, hz_high, hz_bin_width, num_samples, dB, dB, . . .\n");
 }
 
-static hackrf_device *device = NULL;
-
 #ifdef _MSC_VER
 BOOL WINAPI sighandler(int signum)
 {
@@ -721,6 +471,7 @@ int main(int argc, char **argv)
 
 		case 'f':
 			result = parse_u32_range(optarg, &freq_min, &freq_max);
+
 			if (freq_min >= freq_max)
 			{
 				fprintf(stderr,
@@ -744,6 +495,7 @@ int main(int argc, char **argv)
 				usage();
 				return EXIT_FAILURE;
 			}
+
 			frequencies[2 * num_ranges] = (uint16_t)freq_min;
 			frequencies[2 * num_ranges + 1] = (uint16_t)freq_max;
 			num_ranges++;
@@ -927,8 +679,7 @@ int main(int argc, char **argv)
 	fft_bin_width = (double)DEFAULT_SAMPLE_RATE_HZ / fftSize;
 	fftwIn = (fftwf_complex *)fftwf_malloc(sizeof(fftwf_complex) * fftSize);
 	fftwOut = (fftwf_complex *)fftwf_malloc(sizeof(fftwf_complex) * fftSize);
-	fftwPlan =
-		fftwf_plan_dft_1d(fftSize, fftwIn, fftwOut, FFTW_FORWARD, fftw_plan_type);
+	fftwPlan = fftwf_plan_dft_1d(fftSize, fftwIn, fftwOut, FFTW_FORWARD, fftw_plan_type);
 	pwr = (float *)fftwf_malloc(sizeof(float) * fftSize);
 	window = (float *)fftwf_malloc(sizeof(float) * fftSize);
 
@@ -953,6 +704,7 @@ int main(int argc, char **argv)
 #endif
 
 	result = hackrf_init();
+
 	if (result != HACKRF_SUCCESS)
 	{
 		fprintf(stderr,
@@ -964,6 +716,7 @@ int main(int argc, char **argv)
 	}
 
 	result = hackrf_open_by_serial(serial_number, &device);
+
 	if (result != HACKRF_SUCCESS)
 	{
 		fprintf(stderr,
@@ -1011,6 +764,7 @@ int main(int argc, char **argv)
 			"call hackrf_sample_rate_set(%.03f MHz)\n",
 			((float)DEFAULT_SAMPLE_RATE_HZ / (float)FREQ_ONE_MHZ));
 	result = hackrf_set_sample_rate_manual(device, DEFAULT_SAMPLE_RATE_HZ, 1);
+
 	if (result != HACKRF_SUCCESS)
 	{
 		fprintf(stderr,
@@ -1027,6 +781,7 @@ int main(int argc, char **argv)
 	result = hackrf_set_baseband_filter_bandwidth(
 		device,
 		DEFAULT_BASEBAND_FILTER_BANDWIDTH);
+
 	if (result != HACKRF_SUCCESS)
 	{
 		fprintf(stderr,
@@ -1065,6 +820,7 @@ int main(int argc, char **argv)
 		TUNE_STEP * FREQ_ONE_MHZ,
 		OFFSET,
 		INTERLEAVED);
+
 	if (result != HACKRF_SUCCESS)
 	{
 		fprintf(stderr,
@@ -1075,6 +831,7 @@ int main(int argc, char **argv)
 	}
 
 	result |= hackrf_start_rx_sweep(device, rx_callback, NULL);
+
 	if (result != HACKRF_SUCCESS)
 	{
 		fprintf(stderr,
@@ -1119,6 +876,7 @@ int main(int argc, char **argv)
 	time_prev = t_start;
 
 	fprintf(stderr, "Stop with Ctrl-C\n");
+
 	while ((hackrf_is_streaming(device) == HACKRF_TRUE) && (do_exit == false))
 	{
 		float time_difference;
@@ -1133,6 +891,7 @@ int main(int argc, char **argv)
 		}
 
 		gettimeofday(&time_now, NULL);
+
 		if (TimevalDiff(&time_now, &time_prev) >= 1.0f)
 		{
 			time_difference = TimevalDiff(&time_now, &t_start);
@@ -1157,6 +916,7 @@ int main(int argc, char **argv)
 
 	fflush(outfile);
 	result = hackrf_is_streaming(device);
+
 	if (do_exit)
 	{
 		fprintf(stderr, "\nExiting...\n");
@@ -1174,10 +934,12 @@ int main(int argc, char **argv)
 
 	gettimeofday(&time_now, NULL);
 	time_diff = TimevalDiff(&time_now, &t_start);
+	
 	if ((sweep_rate == 0) && (time_diff > 0))
 	{
 		sweep_rate = sweep_count / time_diff;
 	}
+	
 	fprintf(stderr,
 			"Total sweeps: %u in %.5f seconds (%.2f sweeps/second)\n",
 			sweep_count,
