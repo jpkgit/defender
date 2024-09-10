@@ -50,10 +50,7 @@ static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 }
 
 int save_baseline()
-{
-	/* set baserline lock, memcpy, unlock, save copy to file*/
-	    // Open a file for writing
-	
+{		
 	fprintf(stderr, "Saving %u size baseline to file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
 	
 	int index = 0;
@@ -64,17 +61,16 @@ int save_baseline()
 	
 	pthread_mutex_lock(&mutex);
 
-	int j = 0;
+	int j = 0;	
     for (j = 0; j < BASELINE_SIZE; j++) 
 	{
         saved_baseline[j] = baseline[j];
     }
 	
-	baseline_saved = true;
-	
+	baseline_saved = true;	
 	pthread_mutex_unlock(&mutex);
-
     FILE *file = fopen("/tmp/baseline.txt", "w");
+
     if (file == NULL) {
         perror("Error opening file");
         return 1;
@@ -82,6 +78,7 @@ int save_baseline()
 
     // Write the array to the file
 	int i = 0;
+
     for (i = 0; i < BASELINE_SIZE; i++) 
 	{
         fprintf(file, "%f\n", saved_baseline[i]);
@@ -89,7 +86,6 @@ int save_baseline()
 
     // Close the file
     fclose(file);
-
 	fprintf(stderr, "Saved %u size baseline to file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
 	return 0;	
 }
@@ -97,13 +93,13 @@ int save_baseline()
 int load_baseline()
  {
     FILE *file = fopen("/tmp/baseline.txt", "r");
+
     if (file == NULL) {
         perror("Error opening file");
         return -1;
     }
 
 	fprintf(stderr, "Loading %u size baseline from file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
-
 	pthread_mutex_lock(&mutex);
 
 	int i = 0;
@@ -123,9 +119,7 @@ int load_baseline()
     }
 
 	pthread_mutex_unlock(&mutex);
-
 	fprintf(stderr, "Loaded %d size baseline from file %s\n", index, "/tmp/baseline.txt");
-
     fclose(file);
     return index;
 }
@@ -216,6 +210,7 @@ int rx_callback(hackrf_transfer *transfer)
 	for (j = 0; j < BLOCKS_PER_TRANSFER; j++)
 	{
 		ubuf = (uint8_t *)buf;
+
 		if (ubuf[0] == 0x7F && ubuf[1] == 0x7F)
 		{
 			frequency = ((uint64_t)(ubuf[9]) << 56) |
@@ -476,6 +471,7 @@ int main(int argc, char **argv)
 
 		case 'f':
 			result = parse_u32_range(optarg, &freq_min, &freq_max);
+
 			if (freq_min >= freq_max)
 			{
 				fprintf(stderr,
@@ -499,6 +495,7 @@ int main(int argc, char **argv)
 				usage();
 				return EXIT_FAILURE;
 			}
+
 			frequencies[2 * num_ranges] = (uint16_t)freq_min;
 			frequencies[2 * num_ranges + 1] = (uint16_t)freq_max;
 			num_ranges++;
@@ -682,8 +679,7 @@ int main(int argc, char **argv)
 	fft_bin_width = (double)DEFAULT_SAMPLE_RATE_HZ / fftSize;
 	fftwIn = (fftwf_complex *)fftwf_malloc(sizeof(fftwf_complex) * fftSize);
 	fftwOut = (fftwf_complex *)fftwf_malloc(sizeof(fftwf_complex) * fftSize);
-	fftwPlan =
-		fftwf_plan_dft_1d(fftSize, fftwIn, fftwOut, FFTW_FORWARD, fftw_plan_type);
+	fftwPlan = fftwf_plan_dft_1d(fftSize, fftwIn, fftwOut, FFTW_FORWARD, fftw_plan_type);
 	pwr = (float *)fftwf_malloc(sizeof(float) * fftSize);
 	window = (float *)fftwf_malloc(sizeof(float) * fftSize);
 
@@ -708,6 +704,7 @@ int main(int argc, char **argv)
 #endif
 
 	result = hackrf_init();
+
 	if (result != HACKRF_SUCCESS)
 	{
 		fprintf(stderr,
@@ -719,6 +716,7 @@ int main(int argc, char **argv)
 	}
 
 	result = hackrf_open_by_serial(serial_number, &device);
+
 	if (result != HACKRF_SUCCESS)
 	{
 		fprintf(stderr,
@@ -766,6 +764,7 @@ int main(int argc, char **argv)
 			"call hackrf_sample_rate_set(%.03f MHz)\n",
 			((float)DEFAULT_SAMPLE_RATE_HZ / (float)FREQ_ONE_MHZ));
 	result = hackrf_set_sample_rate_manual(device, DEFAULT_SAMPLE_RATE_HZ, 1);
+
 	if (result != HACKRF_SUCCESS)
 	{
 		fprintf(stderr,
@@ -782,6 +781,7 @@ int main(int argc, char **argv)
 	result = hackrf_set_baseband_filter_bandwidth(
 		device,
 		DEFAULT_BASEBAND_FILTER_BANDWIDTH);
+
 	if (result != HACKRF_SUCCESS)
 	{
 		fprintf(stderr,
@@ -820,6 +820,7 @@ int main(int argc, char **argv)
 		TUNE_STEP * FREQ_ONE_MHZ,
 		OFFSET,
 		INTERLEAVED);
+
 	if (result != HACKRF_SUCCESS)
 	{
 		fprintf(stderr,
@@ -830,6 +831,7 @@ int main(int argc, char **argv)
 	}
 
 	result |= hackrf_start_rx_sweep(device, rx_callback, NULL);
+
 	if (result != HACKRF_SUCCESS)
 	{
 		fprintf(stderr,
@@ -874,6 +876,7 @@ int main(int argc, char **argv)
 	time_prev = t_start;
 
 	fprintf(stderr, "Stop with Ctrl-C\n");
+
 	while ((hackrf_is_streaming(device) == HACKRF_TRUE) && (do_exit == false))
 	{
 		float time_difference;
@@ -888,6 +891,7 @@ int main(int argc, char **argv)
 		}
 
 		gettimeofday(&time_now, NULL);
+
 		if (TimevalDiff(&time_now, &time_prev) >= 1.0f)
 		{
 			time_difference = TimevalDiff(&time_now, &t_start);
@@ -912,6 +916,7 @@ int main(int argc, char **argv)
 
 	fflush(outfile);
 	result = hackrf_is_streaming(device);
+
 	if (do_exit)
 	{
 		fprintf(stderr, "\nExiting...\n");
@@ -929,10 +934,12 @@ int main(int argc, char **argv)
 
 	gettimeofday(&time_now, NULL);
 	time_diff = TimevalDiff(&time_now, &t_start);
+	
 	if ((sweep_rate == 0) && (time_diff > 0))
 	{
 		sweep_rate = sweep_count / time_diff;
 	}
+	
 	fprintf(stderr,
 			"Total sweeps: %u in %.5f seconds (%.2f sweeps/second)\n",
 			sweep_count,
