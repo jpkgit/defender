@@ -300,7 +300,7 @@ int save_baseline()
 	/* set baserline lock, memcpy, unlock, save copy to file*/
 	    // Open a file for writing
 	
-	fprintf(stderr, "Saving %u size baseline to file...\n", BASELINE_SIZE);
+	fprintf(stderr, "Saving %u size baseline to file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
 	
 	int index = 0;
 	for (index = 0; index < BASELINE_SIZE;index++)
@@ -336,15 +336,46 @@ int save_baseline()
     // Close the file
     fclose(file);
 
-	fprintf(stderr, "Saved %u size baseline to file\n", BASELINE_SIZE);
+	fprintf(stderr, "Saved %u size baseline to file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
 	return 0;	
 }
 
 int load_baseline()
-{
-	/* load baseline from file */
-	return 0;
+ {
+    FILE *file = fopen("/tmp/baseline.txt", "r");
+    if (file == NULL) {
+        perror("Error opening file");
+        return -1;
+    }
+
+	fprintf(stderr, "Loading %u size baseline from file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
+
+	pthread_mutex_lock(&mutex);
+
+	int i = 0;
+    for (i = 0; i < BASELINE_SIZE; i++) 
+	{
+        saved_baseline[i] = -80.0;
+    }
+    
+    char line[MAX_LINE_LENGTH];
+	int index = 0;
+
+    while (fgets(line, sizeof(line), file) != NULL) 
+	{        
+        // Convert line to float and store in array
+        saved_baseline[index] = strtof(line, NULL);
+        index++;
+    }
+
+	pthread_mutex_unlock(&mutex);
+
+	fprintf(stderr, "Loaded %d size baseline from file %s\n", index, "/tmp/baseline.txt");
+
+    fclose(file);
+    return index;
 }
+
 
 int process_command(int command_key)
 {
@@ -356,6 +387,9 @@ int process_command(int command_key)
 	case 's':
 		save_baseline();
 		break;
+	case 'l':
+		load_baseline();
+		break;		
 	case 'i':
 		increase_threshold();
 		break;		
@@ -396,10 +430,8 @@ int rx_callback(hackrf_transfer *transfer)
 {
 	int8_t *buf;
 	uint8_t *ubuf;
-	unsigned int frequency; /* in Hz */
-	uint64_t band_edge;
-	uint32_t record_length;
-	int i, j, ifft_bins;
+	unsigned int frequency; /* in Hz */	
+	int i, j;
 	struct tm *fft_time;
 	char time_str[50];	
 
@@ -422,8 +454,7 @@ int rx_callback(hackrf_transfer *transfer)
 	}
 
 	byte_count += transfer->valid_length;
-	buf = (int8_t *)transfer->buffer;
-	ifft_bins = fftSize * step_count;
+	buf = (int8_t *)transfer->buffer;	
 
 	for (j = 0; j < BLOCKS_PER_TRANSFER; j++)
 	{
