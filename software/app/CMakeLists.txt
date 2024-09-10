@@ -22,8 +22,6 @@ endif()
 
 add_subdirectory(src)
 
-file(COPY src/fcc_table.csv DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-
 ########################################################################
 # Create uninstall target
 ########################################################################
