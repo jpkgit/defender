@@ -30,6 +30,7 @@ link_directories(${FFTW_LIBRARY_DIRS})
 
 SET(TOOLS	
 	baseline_alerts
+	fcc_table
 )
 
 if(MSVC)
@@ -52,11 +53,12 @@ if(MSVC)
 	LIST(APPEND TOOLS_LINK_LIBS libgetopt_static)
 endif()
 
-foreach(tool ${TOOLS})
-	add_executable(${tool} ${tool}.c)
-	target_link_libraries(${tool} ${TOOLS_LINK_LIBS})
-	install(TARGETS ${tool} RUNTIME DESTINATION ${INSTALL_DEFAULT_BINDIR})
-endforeach(tool)
+add_executable(baseline_alerts baseline_alerts.c fcc_table.c)
+target_link_libraries(baseline_alerts ${TOOLS_LINK_LIBS})
+install(TARGETS baseline_alerts RUNTIME DESTINATION ${INSTALL_DEFAULT_BINDIR})
+
+file(COPY fcc_table.csv DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+
 
 if( ${WIN32} )
 	install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIGURATION>/"

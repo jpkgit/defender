@@ -21,6 +21,8 @@
 
 #include <math.h>
 
+#include "fcc_table.h"
+
 #define _FILE_OFFSET_BITS 64
 
 #ifndef bool
@@ -106,6 +108,7 @@ int average = 10;
 int average_count = 0;
 int first_frequency_array_bin = 0;
 int baseline_alert_offset = 20;
+FrequencyRecord* p_records = 0;
 
 static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 {
@@ -535,17 +538,27 @@ int rx_callback(hackrf_transfer *transfer)
 				
 				if (diff > baseline_alert_offset)
 				{
+					float freq_hz = (float)(frequency-(fftSize/2+i));
 					float freq_mhz = (float)(frequency-(fftSize/2+i))/1000000;
+					int freq_index = -1;
 
-					fprintf(stderr, "Baseline alert at freq %f MHz, power %f, baseline differnce %f, sweep count: %u\n",
-					freq_mhz, baseline[frequency_array_bin], diff, sweep_count);
+					if (p_records != 0)
+						freq_index = lookup_record(p_records, freq_hz);
+
+					fprintf(stderr, "Alert [%f] MHz, power [%f], FCC entry:[%s - %s], baseline differnce %f, sweep count: %u\n",
+					freq_mhz, 
+					baseline[frequency_array_bin], 
+					freq_index == -1 ? "not found" : p_records[freq_index].service,
+					freq_index == -1 ? "not found" : p_records[freq_index].notes,
+					 diff,
+					 sweep_count);
 				}
 			}
 			else if (baseline[frequency_array_bin] > threshold)
 			{
 				float freq_mhz = (float)(frequency-(fftSize/2+i))/1000000;
 
-				fprintf(stderr, "Simple threshold alert at freq %f MHz, power %f, threshold %d, sweep count: %u\n",
+				fprintf(stderr, "Threshold alert at freq %f MHz, power %f, threshold %d, sweep count: %u\n",
 				 freq_mhz, baseline[frequency_array_bin], threshold, sweep_count);
 			}
 		}
@@ -634,6 +647,8 @@ int export_wisdom(const char *path)
 	return 1;
 }
 
+
+
 int main(int argc, char **argv)
 {
 	int opt, i, result = 0;
@@ -650,6 +665,7 @@ int main(int argc, char **argv)
 	uint32_t requested_fft_bin_width;
 	const char *fftwWisdomPath = NULL;
 	int fftw_plan_type = FFTW_MEASURE;	
+	p_records = read_table();
 	
 	int index = 0;
 	
@@ -1113,6 +1129,9 @@ int main(int argc, char **argv)
 	if (do_exit)
 	{
 		fprintf(stderr, "\nExiting...\n");
+
+		if (p_records != 0)
+			free (p_records);
 	}
 	else
 	{
