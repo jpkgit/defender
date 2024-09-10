@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "fcc_table.h": "c"
+        "fcc_table.h": "c",
+        "baseline_alerts.h": "c"
     }
 }
