@@ -21,6 +21,8 @@
 
 #include <math.h>
 
+#include "fcc_table.h"
+
 #define _FILE_OFFSET_BITS 64
 
 #ifndef bool
@@ -105,7 +107,8 @@ int threshold = -81;
 int average = 10;
 int average_count = 0;
 int first_frequency_array_bin = 0;
-int gray_area = 20;
+int baseline_alert_offset = 20;
+FrequencyRecord* p_records = 0;
 
 static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 {
@@ -277,13 +280,27 @@ int decrease_average()
 	return 0;
 }
 
+int increase_alert_offset()
+{
+	fprintf(stderr, "Increased baseline alert offset to: [%d]\n", baseline_alert_offset);
+	baseline_alert_offset++;
+	return 0;
+}
+
+int decrease_alert_offset()
+{
+	fprintf(stderr, "Decreased baseline alert offset to: [%d]\n", baseline_alert_offset);
+	baseline_alert_offset--;
+	return 0;
+}
+
 
 int save_baseline()
 {
 	/* set baserline lock, memcpy, unlock, save copy to file*/
 	    // Open a file for writing
 	
-	fprintf(stderr, "Saving %u size baseline to file...\n", BASELINE_SIZE);
+	fprintf(stderr, "Saving %u size baseline to file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
 	
 	int index = 0;
 	for (index = 0; index < BASELINE_SIZE;index++)
@@ -319,15 +336,46 @@ int save_baseline()
     // Close the file
     fclose(file);
 
-	fprintf(stderr, "Saved %u size baseline to file\n", BASELINE_SIZE);
+	fprintf(stderr, "Saved %u size baseline to file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
 	return 0;	
 }
 
 int load_baseline()
-{
-	/* load baseline from file */
-	return 0;
+ {
+    FILE *file = fopen("/tmp/baseline.txt", "r");
+    if (file == NULL) {
+        perror("Error opening file");
+        return -1;
+    }
+
+	fprintf(stderr, "Loading %u size baseline from file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
+
+	pthread_mutex_lock(&mutex);
+
+	int i = 0;
+    for (i = 0; i < BASELINE_SIZE; i++) 
+	{
+        saved_baseline[i] = -80.0;
+    }
+    
+    char line[MAX_LINE_LENGTH];
+	int index = 0;
+
+    while (fgets(line, sizeof(line), file) != NULL) 
+	{        
+        // Convert line to float and store in array
+        saved_baseline[index] = strtof(line, NULL);
+        index++;
+    }
+
+	pthread_mutex_unlock(&mutex);
+
+	fprintf(stderr, "Loaded %d size baseline from file %s\n", index, "/tmp/baseline.txt");
+
+    fclose(file);
+    return index;
 }
+
 
 int process_command(int command_key)
 {
@@ -339,6 +387,9 @@ int process_command(int command_key)
 	case 's':
 		save_baseline();
 		break;
+	case 'l':
+		load_baseline();
+		break;		
 	case 'i':
 		increase_threshold();
 		break;		
@@ -351,7 +402,12 @@ int process_command(int command_key)
 	case 'z':
 		decrease_average();
 		break;						
-
+	case 'o':
+		increase_alert_offset();
+		break;		
+	case 'p':
+		decrease_alert_offset();
+		break;	
 
 	default:
 		break;
@@ -374,10 +430,8 @@ int rx_callback(hackrf_transfer *transfer)
 {
 	int8_t *buf;
 	uint8_t *ubuf;
-	unsigned int frequency; /* in Hz */
-	uint64_t band_edge;
-	uint32_t record_length;
-	int i, j, ifft_bins;
+	unsigned int frequency; /* in Hz */	
+	int i, j;
 	struct tm *fft_time;
 	char time_str[50];	
 
@@ -400,8 +454,7 @@ int rx_callback(hackrf_transfer *transfer)
 	}
 
 	byte_count += transfer->valid_length;
-	buf = (int8_t *)transfer->buffer;
-	ifft_bins = fftSize * step_count;
+	buf = (int8_t *)transfer->buffer;	
 
 	for (j = 0; j < BLOCKS_PER_TRANSFER; j++)
 	{
@@ -514,19 +567,29 @@ int rx_callback(hackrf_transfer *transfer)
 			{
 				float diff = fabs(baseline[frequency_array_bin] - saved_baseline[frequency_array_bin]);
 				
-				if (diff > gray_area)
+				if (diff > baseline_alert_offset)
 				{
+					float freq_hz = (float)(frequency-(fftSize/2+i));
 					float freq_mhz = (float)(frequency-(fftSize/2+i))/1000000;
+					int freq_index = -1;
 
-					fprintf(stderr, "Baseline alert at freq %f MHz, power %f, baseline differnce %f, sweep count: %u\n",
-					freq_mhz, baseline[frequency_array_bin], diff, sweep_count);
+					if (p_records != 0)
+						freq_index = lookup_record(p_records, freq_hz);
+
+					fprintf(stderr, "Alert [%f] MHz, power [%f], FCC entry:[%s - %s], baseline differnce %f, sweep count: %u\n",
+					freq_mhz, 
+					baseline[frequency_array_bin], 
+					freq_index == -1 ? "not found" : p_records[freq_index].service,
+					freq_index == -1 ? "not found" : p_records[freq_index].notes,
+					 diff,
+					 sweep_count);
 				}
 			}
 			else if (baseline[frequency_array_bin] > threshold)
 			{
 				float freq_mhz = (float)(frequency-(fftSize/2+i))/1000000;
 
-				fprintf(stderr, "Simple threshold alert at freq %f MHz, power %f, threshold %d, sweep count: %u\n",
+				fprintf(stderr, "Threshold alert at freq %f MHz, power %f, threshold %d, sweep count: %u\n",
 				 freq_mhz, baseline[frequency_array_bin], threshold, sweep_count);
 			}
 		}
@@ -615,6 +678,8 @@ int export_wisdom(const char *path)
 	return 1;
 }
 
+
+
 int main(int argc, char **argv)
 {
 	int opt, i, result = 0;
@@ -631,6 +696,7 @@ int main(int argc, char **argv)
 	uint32_t requested_fft_bin_width;
 	const char *fftwWisdomPath = NULL;
 	int fftw_plan_type = FFTW_MEASURE;	
+	p_records = read_table();
 	
 	int index = 0;
 	
@@ -1094,6 +1160,9 @@ int main(int argc, char **argv)
 	if (do_exit)
 	{
 		fprintf(stderr, "\nExiting...\n");
+
+		if (p_records != 0)
+			free (p_records);
 	}
 	else
 	{

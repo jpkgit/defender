@@ -1,0 +1,64 @@
+Start Frequency (Hz),End Frequency (Hz),Service/Use,Notes
+3000,30000,Very Low Frequency (VLF),Submarine communication, naval navigation
+30000,300000,Low Frequency (LF),LORAN navigation, maritime communications, AM longwave broadcast
+300000,535000,Medium Frequency (MF),Maritime distress signals, aircraft beacons
+535000,1705000,AM Radio Broadcasting (MW),AM broadcast radio
+1800000,2000000,Amateur Radio (160 meters),"Top Band," ham radio
+3500000,4000000,Amateur Radio (80 meters),Ham radio
+5060000,5450000,Shortwave Radio (SW),International broadcasts
+7000000,7300000,Amateur Radio (40 meters),Popular for international communication
+14000000,14350000,Amateur Radio (20 meters),Daytime long-range communication (DX)
+26965000,27405000,Citizens Band (CB) Radio,General public communication, truckers
+28000000,29700000,Amateur Radio (10 meters),HF band for long-distance, affected by solar cycles
+30000000,50000000,VHF Low Band,Land mobile services (businesses, public safety), paging
+50000000,54000000,Amateur Radio (6 meters),"The Magic Band," supports short-range and long-range comms
+54000000,88000000,TV Broadcast Channels 2-6,Analog TV, now largely reallocated after digital transition
+88000000,108000000,FM Radio Broadcasting,Commercial and public FM radio
+108000000,118000000,Aeronautical Navigation (VOR),VHF Omnidirectional Range beacons for aircraft navigation
+118000000,137000000,Air Traffic Control (ATC),Voice communication between aircraft and ground control
+137000000,144000000,NOAA Weather Satellites, Data Transmission,Meteorological satellite communication
+144000000,148000000,Amateur Radio (2 meters),Very popular ham radio band
+150000000,174000000,VHF High Band (Public Service, Land Mobile),Public safety, land mobile, business, marine VHF radios
+174000000,216000000,TV Broadcast Channels 7-13,Former analog TV, repurposed for digital TV
+216000000,222000000,Public Safety, Land Mobile,Emergency services, private radio, paging
+222000000,225000000,Amateur Radio (1.25 meters),Ham radio
+300000000,450000000,Military Communications,UHF military bands
+406000000,512000000,UHF Public Service, Land Mobile, TV Broadcast Channels 14-20,Public safety, business radio, TV channels
+420000000,450000000,Amateur Radio (70 cm),Popular ham radio band
+450000000,470000000,Land Mobile Radio,Business, emergency services, private land mobile communications
+470000000,512000000,TV Broadcast Channels 14-20,TV, public safety, business land mobile
+512000000,608000000,TV Broadcast Channels 21-36,UHF TV broadcasting
+608000000,698000000,TV Broadcast Channels 37-51,UHF TV, now repurposed partially for wireless broadband (LTE, 5G)
+698000000,806000000,Public Safety, Cellular Communications,700 MHz band for public safety, emergency services
+806000000,824000000,Specialized Mobile Radio (SMR),Private business communications, trunked systems
+824000000,849000000,Mobile/Cellular Communications (uplink),Cellular services (uplink from phone to tower)
+851000000,869000000,Public Safety, Private Land Mobile,Public safety, two-way radios
+869000000,894000000,Mobile/Cellular Communications (downlink),Cellular services (downlink from tower to phone)
+902000000,928000000,ISM Band (Industrial, Scientific, Medical), Amateur Radio (33 cm),Wi-Fi, cordless phones, RFID, ham radio
+928000000,960000000,Paging, Land Mobile, Specialized Communications,One-way paging systems, narrowband PCS
+1215000000,1350000000,GPS, Aeronautical Radionavigation,Global Positioning System (GPS)
+1350000000,1400000000,Radars, Earth Exploration,Radars, space research
+1400000000,1435000000,Space Operations, Radio Astronomy,Radio astronomy, scientific studies
+1435000000,1525000000,Aeronautical Mobile Telemetry,Aircraft flight testing
+1710000000,1780000000,Advanced Wireless Services (AWS),LTE, 4G mobile services (uplink)
+1850000000,1910000000,PCS (Personal Communications Service) (uplink),Mobile communications (uplink)
+1930000000,1990000000,PCS (Personal Communications Service) (downlink),Mobile communications (downlink)
+1990000000,2025000000,Mobile Satellite Service (uplink),Satellite communications
+2110000000,2155000000,Advanced Wireless Services (AWS),LTE, 4G mobile services (downlink)
+2400000000,2483500000,ISM Band, Wi-Fi (802.11b/g/n), Bluetooth, Amateur Radio (13 cm),Wi-Fi, Bluetooth, microwave ovens, ham radio
+2483500000,2500000000,Satellite Communications (S-band),Satellite downlinks
+2500000000,2690000000,Educational Broadband, Wireless Communications,Educational TV, broadband services
+3300000000,3500000000,Amateur Radio (9 cm), CBRS, Satellite Communications,Amateur radio, Citizens Broadband Radio Service (CBRS), 5G
+3500000000,3700000000,Citizens Broadband Radio Service (CBRS), 5G,Shared use between private users and wireless broadband
+3700000000,4200000000,C-band Satellite Downlinks,Fixed satellite services (broadcast and data links)
+4200000000,4400000000,Aeronautical Radio Navigation,Radar altimeters
+4400000000,5000000000,Military, Defense Radar,Military communications, radar systems
+5725000000,5850000000,ISM Band, Wi-Fi (802.11a/n/ac), Amateur Radio (5 cm),Unlicensed Wi-Fi, ISM applications, ham radio
+5850000000,5925000000,Intelligent Transportation Systems (ITS), DSRC,Dedicated Short-Range Communications (DSRC)
+5925000000,6425000000,Fixed Microwave Services,Point-to-point communications, fixed microwave links
+24000000000,24250000000,Amateur Radio (1.2 cm), ISM, Satellite,Millimeter wave communications, WiGig
+28000000000,30000000000,5G Wireless Communications, Satellite,New 5G bands for mobile broadband
+57000000000,64000000000,WiGig, 5G, Radar,Very high-frequency unlicensed communication (WiGig), experimental
+64000000000,71000000000,5G Wireless Communications, Point-to-Point Links,New millimeter-wave spectrum for 5G, high-speed data links
+71000000000,76000000000,Satellite Communications, Military Radar,High-frequency satellite and defense communications
+81000000000,86000000000,E-band Communication Links,Wireless backhaul, high-capacity links for 5G
