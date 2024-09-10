@@ -1,6 +1,29 @@
 #ifndef BASELINE_ALERTS_H
 #define BASELINE_ALERTS_H
 
+#include <hackrf.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <getopt.h>
+#include <time.h>
+
+#include <unistd.h>
+#include <termios.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <pthread.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <fftw3.h>
+#include <inttypes.h>
+
+#include <math.h>
+
 #include "fcc_table.h"
 
 #define _FILE_OFFSET_BITS 64

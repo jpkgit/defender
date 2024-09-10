@@ -1,131 +1,5 @@
-#include <hackrf.h>
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <getopt.h>
-#include <time.h>
-
-#include <unistd.h>
-#include <termios.h>
-#include <sys/ioctl.h>
-#include <sys/select.h>
-#include <pthread.h>
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <fftw3.h>
-#include <inttypes.h>
-
-#include <math.h>
-
 #include "baseline_alerts.h"
-
-
-
-static float TimevalDiff(const struct timeval *a, const struct timeval *b)
-{
-	return (a->tv_sec - b->tv_sec) + 1e-6f * (a->tv_usec - b->tv_usec);
-}
-
-// Function to check if a key has been pressed
-int kbhit(void)
-{
-	struct termios oldt, newt;
-	int ch;
-	int oldf;
-
-	tcgetattr(STDIN_FILENO, &oldt);
-	newt = oldt;
-	newt.c_lflag &= ~(ICANON | ECHO);
-	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-	oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
-	fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
-
-	ch = getchar();
-
-	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
-	fcntl(STDIN_FILENO, F_SETFL, oldf);
-
-	if (ch != EOF)
-	{
-		ungetc(ch, stdin);
-		return 1;
-	}
-
-	return 0;
-}
-
-int parse_int(char *s, int *const value)
-{
-	int i = atoi(s);
-	*value = i;
-	return HACKRF_SUCCESS;
-}
-
-int parse_u32(char *s, uint32_t *const value)
-{
-	uint_fast8_t base = 10;
-	char *s_end;
-	uint64_t ulong_value;
-
-	if (strlen(s) > 2)
-	{
-		if (s[0] == '0')
-		{
-			if ((s[1] == 'x') || (s[1] == 'X'))
-			{
-				base = 16;
-				s += 2;
-			}
-			else if ((s[1] == 'b') || (s[1] == 'B'))
-			{
-				base = 2;
-				s += 2;
-			}
-		}
-	}
-
-	s_end = s;
-	ulong_value = strtoul(s, &s_end, base);
-	if ((s != s_end) && (*s_end == 0))
-	{
-		*value = (uint32_t)ulong_value;
-		return HACKRF_SUCCESS;
-	}
-	else
-	{
-		return HACKRF_ERROR_INVALID_PARAM;
-	}
-}
-
-int parse_u32_range(char *s, uint32_t *const value_min, uint32_t *const value_max)
-{
-	int result;
-
-	char *sep = strchr(s, ':');
-	if (!sep)
-	{
-		return HACKRF_ERROR_INVALID_PARAM;
-	}
-
-	*sep = 0;
-
-	result = parse_u32(s, value_min);
-	if (result != HACKRF_SUCCESS)
-	{
-		return result;
-	}
-	result = parse_u32(sep + 1, value_max);
-	if (result != HACKRF_SUCCESS)
-	{
-		return result;
-	}
-
-	return HACKRF_SUCCESS;
-}
+#include "utilities.h"
 
 volatile bool do_exit = false;
 
@@ -136,6 +10,7 @@ volatile unsigned int sweep_count = 0;
 struct timeval time_start;
 struct timeval t_start;
 
+static hackrf_device *device = NULL;
 bool amp = false;
 uint32_t amp_enable;
 
@@ -159,6 +34,7 @@ fftwf_plan ifftwPlan = NULL;
 uint32_t ifft_idx = 0;
 float *pwr;
 float *window;
+struct timeval usb_transfer_time;
 
 /* New stuff*/
 float baseline[BASELINE_SIZE];
@@ -167,48 +43,11 @@ bool baseline_saved = false;
 bool b_quit = false;
 pthread_mutex_t mutex;
 
-int increase_threshold()
-{
-	threshold++;
-	fprintf(stderr, "Increased threshold to: [%d]\n", threshold);
-	return 0;
-}
 
-int decrease_threshold()
+static float TimevalDiff(const struct timeval *a, const struct timeval *b)
 {
-	fprintf(stderr, "Decreased threshold to: [%d]\n", threshold);
-	threshold--;
-	return 0;
+	return (a->tv_sec - b->tv_sec) + 1e-6f * (a->tv_usec - b->tv_usec);
 }
-
-int increase_average()
-{
-	average++;
-	fprintf(stderr, "Increased average to: [%d]\n", average);	
-	return 0;
-}
-
-int decrease_average()
-{
-	average--;
-	fprintf(stderr, "Decreased average to: [%d]\n", average);	
-	return 0;
-}
-
-int increase_alert_offset()
-{
-	baseline_alert_offset++;
-	fprintf(stderr, "Increased baseline alert offset to: [%d]\n", baseline_alert_offset);	
-	return 0;
-}
-
-int decrease_alert_offset()
-{
-	baseline_alert_offset--;
-	fprintf(stderr, "Decreased baseline alert offset to: [%d]\n", baseline_alert_offset);	
-	return 0;
-}
-
 
 int save_baseline()
 {
@@ -291,7 +130,6 @@ int load_baseline()
     return index;
 }
 
-
 int process_command(int command_key)
 {
 	switch (command_key)
@@ -306,22 +144,28 @@ int process_command(int command_key)
 		load_baseline();
 		break;		
 	case 'i':
-		increase_threshold();
+		threshold++;
+		fprintf(stderr, "Increased threshold to: [%d]\n", threshold);
 		break;		
 	case 'd':
-		decrease_threshold();
+		threshold--;
+		fprintf(stderr, "Decreased threshold to: [%d]\n", threshold);
 		break;		
 	case 'a':
-		increase_average();
+		average++;
+		fprintf(stderr, "Increased average to: [%d]\n", average);			
 		break;		
 	case 'z':
-		decrease_average();
+		average--;
+		fprintf(stderr, "Decreased average to: [%d]\n", average);	
 		break;						
 	case 'o':
-		increase_alert_offset();
+		baseline_alert_offset++;
+		fprintf(stderr, "Increased baseline alert offset to: [%d]\n", baseline_alert_offset);	
 		break;		
 	case 'p':
-		decrease_alert_offset();
+		baseline_alert_offset--;
+		fprintf(stderr, "Decreased baseline alert offset to: [%d]\n", baseline_alert_offset);	
 		break;	
 
 	default:
@@ -330,8 +174,6 @@ int process_command(int command_key)
 
 	return 0;
 }
-
-struct timeval usb_transfer_time;
 
 float logPower(fftwf_complex in, float scale)
 {
@@ -538,8 +380,6 @@ static void usage()
 			"Output fields:\n"
 			"\tdate, time, hz_low, hz_high, hz_bin_width, num_samples, dB, dB, . . .\n");
 }
-
-static hackrf_device *device = NULL;
 
 #ifdef _MSC_VER
 BOOL WINAPI sighandler(int signum)

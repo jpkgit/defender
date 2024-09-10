@@ -30,7 +30,7 @@ if(MSVC)
 	LIST(APPEND TOOLS_LINK_LIBS libgetopt_static)
 endif()
 
-add_executable(baseline_alerts baseline_alerts.c fcc_table.c)
+add_executable(baseline_alerts baseline_alerts.c fcc_table.c utilities.c)
 target_link_libraries(baseline_alerts ${TOOLS_LINK_LIBS})
 install(TARGETS baseline_alerts RUNTIME DESTINATION ${INSTALL_DEFAULT_BINDIR})
 
