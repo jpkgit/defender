@@ -120,6 +120,7 @@ int load_baseline()
 
 	pthread_mutex_unlock(&mutex);
 	fprintf(stderr, "Loaded %d size baseline from file %s\n", index, "/tmp/baseline.txt");
+	baseline_saved = true;
     fclose(file);
     return index;
 }
