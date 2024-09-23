@@ -39,6 +39,8 @@ struct timeval usb_transfer_time;
 /* New stuff*/
 float baseline[BASELINE_SIZE];
 float saved_baseline[BASELINE_SIZE];
+int baseline_hit_count[BASELINE_SIZE];
+
 bool baseline_saved = false;
 bool b_quit = false;
 pthread_mutex_t mutex;
@@ -70,8 +72,9 @@ int save_baseline()
 	baseline_saved = true;	
 	pthread_mutex_unlock(&mutex);
     FILE *file = fopen("/tmp/baseline.txt", "w");
+	FILE *file_signals = fopen("/tmp/signals.txt", "w");
 
-    if (file == NULL) {
+    if (file == NULL || file_signals == NULL) {
         perror("Error opening file");
         return 1;
     }
@@ -82,11 +85,20 @@ int save_baseline()
     for (i = 0; i < BASELINE_SIZE; i++) 
 	{
         fprintf(file, "%f\n", saved_baseline[i]);
+
+		// might need to protect signal list during print
+		if (baseline_hit_count[i] > 0)
+		{
+			fprintf(file_signals, "Freq (mhz): %f, Count %d \n", (float)i*6000/1000000, baseline_hit_count[i]);
+		}
+
     }
 
     // Close the file
     fclose(file);
+	fclose(file_signals);
 	fprintf(stderr, "Saved %u size baseline to file %s\n", BASELINE_SIZE, "/tmp/baseline.txt");
+	fprintf(stderr, "Saved baseline signal list and hit count to file %s\n", "/tmp/signals.txt");
 	return 0;	
 }
 
@@ -330,12 +342,14 @@ int rx_callback(hackrf_transfer *transfer)
 						freq_index = lookup_record(p_records, freq_hz);
 
 					fprintf(stderr, "Alert [%f] MHz, power [%f], FCC entry:[%s - %s], baseline differnce %f, sweep count: %u\n",
-					freq_mhz, 
-					baseline[frequency_array_bin], 
-					freq_index == -1 ? "not found" : p_records[freq_index].service,
-					freq_index == -1 ? "not found" : p_records[freq_index].notes,
-					 diff,
-					 sweep_count);
+						freq_mhz, 
+						baseline[frequency_array_bin], 
+						freq_index == -1 ? "not found" : p_records[freq_index].service,
+						freq_index == -1 ? "not found" : p_records[freq_index].notes,
+						diff,
+						sweep_count);
+
+					baseline_hit_count[frequency_array_bin]++;
 				}
 			}
 			else if (baseline[frequency_array_bin] > threshold)
@@ -454,6 +468,7 @@ int main(int argc, char **argv)
 	for (index = 0; index < BASELINE_SIZE; index++)
 	{
 		baseline[index] = -80.0;
+		baseline_hit_count[index] = 0;
 	}
 
 	while ((opt = getopt(argc, argv, "a:f:p:l:g:d:N:w:W:P:n1BIr:t:h?")) != EOF)
