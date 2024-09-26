@@ -79,6 +79,8 @@ int save_baseline()
         return 1;
     }
 
+
+	fprintf(file_signals, "Freq (mhz), Count");
     // Write the array to the file
 	int i = 0;
 
@@ -89,7 +91,7 @@ int save_baseline()
 		// might need to protect signal list during print
 		if (baseline_hit_count[i] > 0)
 		{
-			fprintf(file_signals, "Freq (mhz): %f, Count %d \n", (float)i*6000/1000000, baseline_hit_count[i]);
+			fprintf(file_signals, "%f, %d \n", (float)i*6000/1000000, baseline_hit_count[i]);
 		}
 
     }
